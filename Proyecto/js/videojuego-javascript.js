@@ -91,9 +91,9 @@ var game = (function () {
     var enemyTypeConfigs = {
         1: { spriteIndex: 0, lifeBonus: 0, shotsBonus: 0, speedBonus: 0.00, pointsBonus: 0 },
         2: { spriteIndex: 1, lifeBonus: 1, shotsBonus: 0, speedBonus: 0.05, pointsBonus: 1 },
-        3: { spriteIndex: 2, lifeBonus: 0, shotsBonus: 1, speedBonus: 0.08, pointsBonus: 2 },
-        4: { spriteIndex: 3, lifeBonus: 1, shotsBonus: 1, speedBonus: 0.10, pointsBonus: 3 },
-        5: { spriteIndex: 4, lifeBonus: 2, shotsBonus: 1, speedBonus: 0.14, pointsBonus: 4 }
+        3: { spriteIndex: 2, lifeBonus: 2, shotsBonus: 1, speedBonus: 0.08, pointsBonus: 3 },
+        4: { spriteIndex: 3, lifeBonus: 3, shotsBonus: 1, speedBonus: 0.10, pointsBonus: 5 },
+        5: { spriteIndex: 4, lifeBonus: 4, shotsBonus: 1, speedBonus: 0.14, pointsBonus: 7 }
     };
 
     var bossByLevel = {
@@ -316,28 +316,28 @@ var game = (function () {
                 return { cadence: 14, shield: 16, bigBullets: 12, slow: 12, fogueo: 8, bounce: 6, homing: 4, life: 2, speed: 12, points: 8, dodge: 2, damage: 4 };
             }
             if (phase <= 4) {
-                return { cadence: 13, shield: 14, bigBullets: 12, slow: 12, fogueo: 8, bounce: 8, homing: 6, life: 4, speed: 12, points: 8, dodge: 2, damage: 1 };
+                return { cadence: 13, shield: 14, bigBullets: 12, slow: 12, fogueo: 8, bounce: 8, homing: 6, life: 4, speed: 12, points: 8, dodge: 2, damage: 3 };
             }
             if (phase <= 6) {
-                return { cadence: 12, shield: 12, bigBullets: 10, slow: 12, fogueo: 8, bounce: 9, homing: 8, life: 6, speed: 11, points: 8, dodge: 2, damage: 2 };
+                return { cadence: 12, shield: 12, bigBullets: 10, slow: 12, fogueo: 8, bounce: 9, homing: 8, life: 6, speed: 11, points: 8, dodge: 2, damage: 4 };
             }
             if (phase <= 8) {
-                return { cadence: 11, shield: 10, bigBullets: 9, slow: 11, fogueo: 9, bounce: 10, homing: 10, life: 8, speed: 10, points: 8, dodge: 2, damage: 2 };
+                return { cadence: 11, shield: 10, bigBullets: 9, slow: 11, fogueo: 9, bounce: 10, homing: 10, life: 8, speed: 10, points: 8, dodge: 2, damage: 5 };
             }
-            return { cadence: 10, shield: 9, bigBullets: 8, slow: 10, fogueo: 10, bounce: 10, homing: 12, life: 10, speed: 9, points: 8, dodge: 2, damage: 2 };
+            return { cadence: 10, shield: 9, bigBullets: 8, slow: 10, fogueo: 10, bounce: 10, homing: 12, life: 10, speed: 9, points: 8, dodge: 2, damage: 6 };
         }
 
         if (phase <= 2) {
-            return { cadence: 10, shield: 16, bigBullets: 10, slow: 12, fogueo: 10, bounce: 8, homing: 6, life: 4, speed: 10, points: 8, dodge: 2, damage: 4 };
+            return { cadence: 10, shield: 16, bigBullets: 10, slow: 12, fogueo: 10, bounce: 8, homing: 6, life: 4, speed: 10, points: 8, dodge: 2, damage: 5 };
         }
         if (phase <= 4) {
-            return { cadence: 9, shield: 14, bigBullets: 10, slow: 12, fogueo: 10, bounce: 10, homing: 8, life: 4, speed: 10, points: 8, dodge: 2, damage: 3 };
+            return { cadence: 9, shield: 14, bigBullets: 10, slow: 12, fogueo: 10, bounce: 10, homing: 8, life: 4, speed: 10, points: 8, dodge: 2, damage: 5 };
         }
         if (phase <= 6) {
-            return { cadence: 8, shield: 13, bigBullets: 9, slow: 12, fogueo: 10, bounce: 10, homing: 10, life: 6, speed: 10, points: 8, dodge: 2, damage: 2 };
+            return { cadence: 8, shield: 13, bigBullets: 9, slow: 12, fogueo: 10, bounce: 10, homing: 10, life: 6, speed: 10, points: 8, dodge: 2, damage: 6 };
         }
         if (phase <= 8) {
-            return { cadence: 7, shield: 12, bigBullets: 8, slow: 11, fogueo: 12, bounce: 12, homing: 12, life: 8, speed: 8, points: 6, dodge: 2, damage: 2 };
+            return { cadence: 7, shield: 12, bigBullets: 8, slow: 11, fogueo: 12, bounce: 12, homing: 12, life: 8, speed: 8, points: 6, dodge: 2, damage: 7 };
         }
         return { cadence: 6, shield: 11, bigBullets: 7, slow: 10, fogueo: 12, bounce: 11, homing: 11, life: 9, speed: 8, points: 5, dodge: 2, damage: 8 };
     }
@@ -601,7 +601,7 @@ var game = (function () {
     function getCurrentStageConfig() {
         var isBossStage = currentStageType === 'boss';
         var enemyCount = getEnemyCountForPhase(currentLevel, currentPhase);
-        var baseEnemyLife = 2 + (currentLevel - 1) + Math.floor((currentPhase - 1) / 3);
+        var baseEnemyLife = 2 + (currentLevel - 1) + Math.floor((currentPhase - 1) / 2);
         var baseEnemyShots = 3 + currentLevel + Math.floor((currentPhase - 1) / 2);
         var baseEnemySpeed = defaultEnemySpeed + ((currentLevel - 1) * 0.25) + ((currentPhase - 1) * 0.03);
 
@@ -615,7 +615,7 @@ var game = (function () {
             enemyLife: baseEnemyLife,
             enemyShots: baseEnemyShots,
             enemySpeed: baseEnemySpeed,
-            enemyPoints: 4 + currentLevel + currentPhase,
+            enemyPoints: 4 + currentLevel + currentPhase + Math.floor((currentPhase - 1) / 2),
             enemyTypePool: enemyTypePool,
             maxConcurrent: isBossStage ? 1 : maxConcurrent,
             spawnDelayMin: isBossStage ? 0 : spawnDelay.min,
@@ -1024,7 +1024,9 @@ var game = (function () {
         this.image = enemyImages.animation[this.fixedSpriteIndex !== null ? this.fixedSpriteIndex : 0];
         this.imageNumber = 1;
         this.animation = 0;
-        this.posX = getRandomNumber(canvas.width - this.image.width);
+        this.spriteWidth = this.image.width || 40;
+        this.spriteHeight = this.image.height || 40;
+        this.posX = getRandomNumber(Math.max(1, canvas.width - this.spriteWidth));
         this.posY = -50;
         this.life = life;
         this.speed = defaultEnemySpeed;
@@ -1035,8 +1037,10 @@ var game = (function () {
 
         var desplazamientoHorizontal = minHorizontalOffset +
             getRandomNumber(maxHorizontalOffset - minHorizontalOffset);
-        this.minX = getRandomNumber(canvas.width - desplazamientoHorizontal);
-        this.maxX = this.minX + desplazamientoHorizontal - 40;
+        var maxTravel = Math.max(minHorizontalOffset, Math.min(desplazamientoHorizontal, canvas.width - this.spriteWidth));
+        var maxStartX = Math.max(1, canvas.width - this.spriteWidth - maxTravel);
+        this.minX = getRandomNumber(maxStartX);
+        this.maxX = this.minX + maxTravel;
         this.direction = 'D';
 
 
@@ -1053,18 +1057,16 @@ var game = (function () {
             }
             this.posY += movementSpeed;
             if (this.direction === 'D') {
-                if (this.posX <= this.maxX) {
-                    this.posX += movementSpeed;
-                } else {
+                this.posX += movementSpeed;
+                if (this.posX >= this.maxX) {
+                    this.posX = this.maxX;
                     this.direction = 'I';
-                    this.posX -= movementSpeed;
                 }
             } else {
-                if (this.posX >= this.minX) {
-                    this.posX -= movementSpeed;
-                } else {
+                this.posX -= movementSpeed;
+                if (this.posX <= this.minX) {
+                    this.posX = this.minX;
                     this.direction = 'D';
-                    this.posX += movementSpeed;
                 }
             }
             this.animation++;
@@ -1357,7 +1359,7 @@ var game = (function () {
         for (var e = 0; e < activeEnemies.length; e++) {
             var enemy = activeEnemies[e];
             if (enemy) {
-                bufferctx.drawImage(enemy.image, enemy.posX, enemy.posY);
+                bufferctx.drawImage(enemy.image, Math.round(enemy.posX), Math.round(enemy.posY));
             }
         }
 
