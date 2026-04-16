@@ -224,6 +224,27 @@ var game = (function () {
         }
     }
 
+    function parseDebugRewardList(rawValue) {
+        if (!rawValue) {
+            return [];
+        }
+
+        var values = rawValue.split(',');
+        var parsed = [];
+        var seen = {};
+
+        for (var i = 0; i < values.length; i++) {
+            var rewardId = (values[i] || '').replace(/\s+/g, '').toLowerCase();
+            if (!rewardId || seen[rewardId] || !rewardCatalog[rewardId]) {
+                continue;
+            }
+            seen[rewardId] = true;
+            parsed.push(rewardId);
+        }
+
+        return parsed;
+    }
+
     function loadDebugStartConfigFromUrl() {
         if (!window.location || !window.location.search) {
             return;
@@ -260,6 +281,11 @@ var game = (function () {
             debugStartConfig.stageType = values.stage.toLowerCase() === 'boss' ? 'boss' : 'normal';
             debugStartConfig.enabled = true;
         }
+
+        var rewardsFromUrl = values.rewards || values.reward || '';
+        if (rewardsFromUrl) {
+            debugRewardsForTest = parseDebugRewardList(rewardsFromUrl);
+        }
     }
 
     function applyDebugStartConfig() {
@@ -287,6 +313,24 @@ var game = (function () {
         debugStartConfig.level = 1;
         debugStartConfig.phase = 1;
         debugStartConfig.stageType = 'normal';
+    }
+
+    function setDebugRewardsForTest(rewardIds) {
+        if (typeof rewardIds === 'string') {
+            debugRewardsForTest = parseDebugRewardList(rewardIds);
+            return;
+        }
+
+        if (!rewardIds || !rewardIds.length) {
+            debugRewardsForTest = [];
+            return;
+        }
+
+        debugRewardsForTest = parseDebugRewardList(rewardIds.join(','));
+    }
+
+    function clearDebugRewardsForTest() {
+        debugRewardsForTest = [];
     }
 
     function showLifeAndScore () {
@@ -604,7 +648,7 @@ var game = (function () {
         });
 
         if (reward) {
-            drawArcadeText(reward.name, x + (width / 2), y + 52, {
+           drawArcadeText(reward.name, x + (width / 2), y + 52, {
                 color: arcadeTheme.primaryText,
                 font: "bold 14px 'Courier New', monospace",
                 align: 'center',
@@ -1718,6 +1762,8 @@ var game = (function () {
     return {
         init: init,
         setDebugStartConfig: setDebugStartConfig,
-        clearDebugStartConfig: clearDebugStartConfig
+        clearDebugStartConfig: clearDebugStartConfig,
+        setDebugRewardsForTest: setDebugRewardsForTest,
+        clearDebugRewardsForTest: clearDebugRewardsForTest
     }
 })();
