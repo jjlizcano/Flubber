@@ -173,8 +173,7 @@ var game = (function () {
             outlineWidth: 3
         });
 
-        drawArcadeText('ETAPA ' + (currentStageType === 'boss' ? 'JEFE' : 'NORMAL') +
-            '  ENEMIGOS ' + getAliveEnemiesCount(), 18, 49, {
+        drawArcadeText('ETAPA ' + (currentStageType === 'boss' ? 'JEFE' : 'NORMAL'), 18, 49, {
             color: arcadeTheme.secondaryText,
             font: "bold 13px 'Courier New', monospace",
             align: 'left',
@@ -248,7 +247,7 @@ var game = (function () {
 
     function getCurrentStageConfig() {
         var isBossStage = currentStageType === 'boss';
-        var enemyCount = 2 + Math.floor((currentPhase + 1) / 2) + currentLevel;
+        var enemyCount = getEnemyCountForPhase(currentLevel, currentPhase);
         var baseEnemyLife = 2 + (currentLevel - 1) + Math.floor((currentPhase - 1) / 3);
         var baseEnemyShots = 3 + currentLevel + Math.floor((currentPhase - 1) / 2);
         var baseEnemySpeed = defaultEnemySpeed + ((currentLevel - 1) * 0.25) + ((currentPhase - 1) * 0.03);
@@ -273,6 +272,16 @@ var game = (function () {
             bossSpeed: 0.8 + (currentLevel * 0.1),
             bossPoints: 40 + (currentLevel * 10)
         };
+    }
+
+    function getEnemyCountForPhase(level, phase) {
+        if (level === 1) {
+            return phase + 1;
+        }
+        if (level === 2) {
+            return phase + 11;
+        }
+        return phase + 11;
     }
 
     function getEnemyTypePool(level, phase) {
