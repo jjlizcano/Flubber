@@ -89,11 +89,11 @@ var game = (function () {
     };
 
     var enemyTypeConfigs = {
-        1: { spriteIndex: 0, lifeBonus: 0, shotsBonus: 0, speedBonus: 0.00, pointsBonus: 0 },
-        2: { spriteIndex: 1, lifeBonus: 1, shotsBonus: 0, speedBonus: 0.05, pointsBonus: 1 },
+        1: { spriteIndex: 0, lifeBonus: 0, shotsBonus: 0, speedBonus: 0.14, pointsBonus: 0 },
+        2: { spriteIndex: 1, lifeBonus: 1, shotsBonus: 0, speedBonus: 0.10, pointsBonus: 1 },
         3: { spriteIndex: 2, lifeBonus: 2, shotsBonus: 1, speedBonus: 0.08, pointsBonus: 3 },
-        4: { spriteIndex: 3, lifeBonus: 3, shotsBonus: 1, speedBonus: 0.10, pointsBonus: 5 },
-        5: { spriteIndex: 4, lifeBonus: 4, shotsBonus: 1, speedBonus: 0.14, pointsBonus: 7 }
+        4: { spriteIndex: 3, lifeBonus: 3, shotsBonus: 1, speedBonus: 0.05, pointsBonus: 5 },
+        5: { spriteIndex: 4, lifeBonus: 4, shotsBonus: 1, speedBonus: 0.00, pointsBonus: 7 }
     };
 
     var bossByLevel = {
@@ -142,6 +142,12 @@ var game = (function () {
     var maxPlayerLife = 5;
     var fogueoPulseInterval = 7000;
     var debugRewardsForTest = [];
+    var debugStartConfig = {
+        enabled: false,
+        level: 1,
+        phase: 1,
+        stageType: 'normal'
+    };
 
     function loop() {
         update();
@@ -188,9 +194,11 @@ var game = (function () {
         buffer.height = canvas.height;
         bufferctx = buffer.getContext('2d');
 
+        loadDebugStartConfigFromUrl();
+        applyDebugStartConfig();
         player = new Player(playerLife, 0);
         applyDebugRewardsForTest();
-        startCountdown('Nivel 1 - Fase 1');
+        startCountdown('Nivel ' + currentLevel + ' - Fase ' + currentPhase);
 
         showLifeAndScore();
 
@@ -214,6 +222,71 @@ var game = (function () {
                 applyReward(rewardCatalog[rewardId]);
             }
         }
+    }
+
+    function loadDebugStartConfigFromUrl() {
+        if (!window.location || !window.location.search) {
+            return;
+        }
+
+        var params = window.location.search.replace(/^\?/, '').split('&');
+        var values = {};
+
+        for (var i = 0; i < params.length; i++) {
+            if (!params[i]) {
+                continue;
+            }
+            var pair = params[i].split('=');
+            var key = decodeURIComponent(pair[0] || '').toLowerCase();
+            var value = decodeURIComponent(pair[1] || '');
+            values[key] = value;
+        }
+
+        if (values.debug === '1' || values.debug === 'true' || values.debug === 'yes') {
+            debugStartConfig.enabled = true;
+        }
+
+        if (values.level) {
+            debugStartConfig.level = parseInt(values.level, 10) || 1;
+            debugStartConfig.enabled = true;
+        }
+
+        if (values.phase) {
+            debugStartConfig.phase = parseInt(values.phase, 10) || 1;
+            debugStartConfig.enabled = true;
+        }
+
+        if (values.stage) {
+            debugStartConfig.stageType = values.stage.toLowerCase() === 'boss' ? 'boss' : 'normal';
+            debugStartConfig.enabled = true;
+        }
+    }
+
+    function applyDebugStartConfig() {
+        if (!debugStartConfig || !debugStartConfig.enabled) {
+            currentLevel = 1;
+            currentPhase = 1;
+            currentStageType = 'normal';
+            return;
+        }
+
+        currentLevel = Math.min(totalLevels, Math.max(1, parseInt(debugStartConfig.level, 10) || 1));
+        currentPhase = Math.min(phasesPerLevel, Math.max(1, parseInt(debugStartConfig.phase, 10) || 1));
+        currentStageType = debugStartConfig.stageType === 'boss' ? 'boss' : 'normal';
+    }
+
+    function setDebugStartConfig(config) {
+        debugStartConfig.enabled = !!(config && config.enabled);
+        debugStartConfig.level = config && config.level !== undefined ? config.level : 1;
+        debugStartConfig.phase = config && config.phase !== undefined ? config.phase : 1;
+        debugStartConfig.stageType = config && config.stageType === 'boss' ? 'boss' : 'normal';
+    }
+
+    function clearDebugStartConfig() {
+        debugStartConfig.enabled = false;
+        debugStartConfig.level = 1;
+        debugStartConfig.phase = 1;
+        debugStartConfig.stageType = 'normal';
     }
 
     function showLifeAndScore () {
@@ -603,7 +676,7 @@ var game = (function () {
         var enemyCount = getEnemyCountForPhase(currentLevel, currentPhase);
         var baseEnemyLife = 2 + (currentLevel - 1) + Math.floor((currentPhase - 1) / 2);
         var baseEnemyShots = 3 + currentLevel + Math.floor((currentPhase - 1) / 2);
-        var baseEnemySpeed = defaultEnemySpeed + ((currentLevel - 1) * 0.25) + ((currentPhase - 1) * 0.03);
+        var baseEnemySpeed = defaultEnemySpeed + ((currentLevel - 1) * 0.22) + ((currentPhase - 1) * 0.05);
 
         var enemyTypePool = getEnemyTypePool(currentLevel, currentPhase);
         var maxConcurrent = getMaxConcurrentForStage(currentLevel, currentPhase);
@@ -1643,6 +1716,8 @@ var game = (function () {
     /******************************* FIN MEJORES PUNTUACIONES *******************************/
 
     return {
-        init: init
+        init: init,
+        setDebugStartConfig: setDebugStartConfig,
+        clearDebugStartConfig: clearDebugStartConfig
     }
 })();
