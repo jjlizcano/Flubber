@@ -1151,6 +1151,10 @@ var game = (function () {
         this.dead = false;
         this.shotTimeoutId = null;
         this.slowUntil = 0;
+        this.zigzagMotion = false;
+        this.zigzagDirection = 1;
+        this.zigzagHorizontalSpeed = 0;
+        this.zigzagVerticalSpeed = 0;
 
         var desplazamientoHorizontal = minHorizontalOffset +
             getRandomNumber(maxHorizontalOffset - minHorizontalOffset);
@@ -1172,18 +1176,33 @@ var game = (function () {
             if (this.slowUntil && new Date().getTime() < this.slowUntil) {
                 movementSpeed = movementSpeed * 0.6;
             }
-            this.posY += movementSpeed;
-            if (this.direction === 'D') {
-                this.posX += movementSpeed;
-                if (this.posX >= this.maxX) {
-                    this.posX = this.maxX;
-                    this.direction = 'I';
+            if (this.zigzagMotion) {
+                var horizontalSpeed = this.zigzagHorizontalSpeed || Math.max(1.6, movementSpeed * 1.35);
+                var verticalSpeed = this.zigzagVerticalSpeed || Math.max(0.75, movementSpeed * 0.9);
+                this.posY += verticalSpeed;
+                this.posX += (horizontalSpeed * this.zigzagDirection);
+
+                if (this.posX <= 0) {
+                    this.posX = 0;
+                    this.zigzagDirection = 1;
+                } else if (this.posX >= (canvas.width - this.spriteWidth)) {
+                    this.posX = canvas.width - this.spriteWidth;
+                    this.zigzagDirection = -1;
                 }
             } else {
-                this.posX -= movementSpeed;
-                if (this.posX <= this.minX) {
-                    this.posX = this.minX;
-                    this.direction = 'D';
+                this.posY += movementSpeed;
+                if (this.direction === 'D') {
+                    this.posX += movementSpeed;
+                    if (this.posX >= this.maxX) {
+                        this.posX = this.maxX;
+                        this.direction = 'I';
+                    }
+                } else {
+                    this.posX -= movementSpeed;
+                    if (this.posX <= this.minX) {
+                        this.posX = this.minX;
+                        this.direction = 'D';
+                    }
                 }
             }
             this.animation++;
@@ -1241,6 +1260,15 @@ var game = (function () {
         this.goDownSpeed = velocidad;
         this.enemyType = enemyType || 1;
         this.pointsToKill = 5;
+        if (this.enemyType === 1) {
+            this.zigzagMotion = true;
+            this.zigzagDirection = getRandomNumber(2) === 0 ? -1 : 1;
+            this.zigzagHorizontalSpeed = Math.max(1.7, this.goDownSpeed * 1.4);
+            this.zigzagVerticalSpeed = Math.max(0.8, this.goDownSpeed * 0.95);
+            this.minX = 0;
+            this.maxX = canvas.width - this.spriteWidth;
+            this.direction = this.zigzagDirection > 0 ? 'D' : 'I';
+        }
     }
 
     Evil.prototype = Object.create(Enemy.prototype);
