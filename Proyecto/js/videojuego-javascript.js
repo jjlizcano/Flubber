@@ -1163,6 +1163,22 @@ var game = (function () {
         this.circularCenterY = 0;
         this.circularOrbitSpeed = 0;
         this.circularVerticalDrift = 0;
+        this.hunterMotion = false;
+        this.hunterState = 'enter';
+        this.hunterEntryTargetY = 80;
+        this.hunterChargeUntil = 0;
+        this.hunterChargeCenterX = 0;
+        this.hunterChargePhase = 0;
+        this.hunterChargeAmplitude = 26;
+        this.hunterDashStartX = 0;
+        this.hunterDashStartY = 0;
+        this.hunterDashTargetX = 0;
+        this.hunterDashTargetY = 0;
+        this.hunterDashSpeed = 5;
+        this.hunterReturnSpeed = 3.2;
+        this.hunterZigzagUntil = 0;
+        this.hunterBurstShotsRemaining = 0;
+        this.hunterNextBurstAt = 0;
 
         var desplazamientoHorizontal = minHorizontalOffset +
             getRandomNumber(maxHorizontalOffset - minHorizontalOffset);
@@ -1179,12 +1195,137 @@ var game = (function () {
             this.image = enemyImages.killed;
         };
 
+        function moveTowards(enemy, targetX, targetY, speed) {
+            var deltaX = targetX - enemy.posX;
+            var deltaY = targetY - enemy.posY;
+            var distance = Math.sqrt((deltaX * deltaX) + (deltaY * deltaY));
+            if (distance <= speed || distance === 0) {
+                enemy.posX = targetX;
+                enemy.posY = targetY;
+                return true;
+            }
+            enemy.posX += (deltaX / distance) * speed;
+            enemy.posY += (deltaY / distance) * speed;
+            return false;
+        }
+
+        function fireVerticalShot(enemy) {
+            if (enemy.dead || stageState !== 'playing') {
+                return;
+            }
+            if (enemy.enemyType !== 3 && enemy.shots <= 0) {
+                return;
+            }
+            var centerX = enemy.posX + (enemy.image.width / 2) - 5;
+            var baseY = enemy.posY + enemy.image.height;
+            var shot = new EvilShot(centerX, baseY);
+            shot.vx = 0;
+            shot.add();
+            if (enemy.enemyType !== 3) {
+                enemy.shots--;
+            }
+        }
+
+        function updateHunterMovement(enemy, movementSpeed) {
+            var nowTime = new Date().getTime();
+            if (enemy.hunterState === 'enter') {
+                enemy.posY += Math.max(0.9, movementSpeed);
+                if (enemy.posY >= enemy.hunterEntryTargetY) {
+                    enemy.posY = enemy.hunterEntryTargetY;
+                    enemy.hunterState = 'charge';
+                    enemy.hunterChargeCenterX = enemy.posX;
+                    enemy.hunterChargePhase = 0;
+                    enemy.hunterChargeUntil = nowTime + 700;
+                }
+                return;
+            }
+
+            if (enemy.hunterState === 'charge') {
+                enemy.hunterChargePhase += 0.35;
+                enemy.posY += Math.max(0.12, movementSpeed * 0.12);
+                enemy.posX = enemy.hunterChargeCenterX + Math.sin(enemy.hunterChargePhase) * enemy.hunterChargeAmplitude;
+                if (enemy.posX < 0) {
+                    enemy.posX = 0;
+                } else if (enemy.posX > (canvas.width - enemy.spriteWidth)) {
+                    enemy.posX = canvas.width - enemy.spriteWidth;
+                }
+                if (nowTime >= enemy.hunterChargeUntil) {
+                    enemy.hunterDashStartX = enemy.posX;
+                    enemy.hunterDashStartY = enemy.posY;
+                    enemy.hunterDashTargetX = player ? player.posX + (player.width / 2) - (enemy.spriteWidth / 2) : enemy.posX;
+                    enemy.hunterDashTargetY = player ? player.posY + (player.height / 2) - (enemy.spriteHeight / 2) : (enemy.posY + 120);
+                    if (enemy.hunterDashTargetX < 0) {
+                        enemy.hunterDashTargetX = 0;
+                    } else if (enemy.hunterDashTargetX > (canvas.width - enemy.spriteWidth)) {
+                        enemy.hunterDashTargetX = canvas.width - enemy.spriteWidth;
+                    }
+                    if (enemy.hunterDashTargetY < -enemy.spriteHeight) {
+                        enemy.hunterDashTargetY = -enemy.spriteHeight;
+                    }
+                    enemy.hunterState = 'dash';
+                }
+                return;
+            }
+
+            if (enemy.hunterState === 'dash') {
+                var reachedTarget = moveTowards(enemy, enemy.hunterDashTargetX, enemy.hunterDashTargetY,
+                    Math.max(4.2, enemy.hunterDashSpeed));
+                if (reachedTarget) {
+                    enemy.hunterState = 'return';
+                }
+                return;
+            }
+
+            if (enemy.hunterState === 'return') {
+                var returnedToOrigin = moveTowards(enemy, enemy.hunterDashStartX, enemy.hunterDashStartY,
+                    Math.max(2.6, enemy.hunterReturnSpeed));
+                if (returnedToOrigin) {
+                    enemy.hunterState = 'zigzag';
+                    enemy.hunterZigzagUntil = nowTime + 1400;
+                    enemy.hunterBurstShotsRemaining = 2;
+                    enemy.hunterNextBurstAt = nowTime + 120;
+                    enemy.zigzagDirection = getRandomNumber(2) === 0 ? -1 : 1;
+                }
+                return;
+            }
+
+            if (enemy.hunterState === 'zigzag') {
+                var horizontalSpeed = enemy.zigzagHorizontalSpeed || Math.max(1.4, movementSpeed * 1.15);
+                var verticalSpeed = enemy.zigzagVerticalSpeed || Math.max(0.55, movementSpeed * 0.7);
+                enemy.posY += verticalSpeed;
+                enemy.posX += (horizontalSpeed * enemy.zigzagDirection);
+
+                if (enemy.posX <= 0) {
+                    enemy.posX = 0;
+                    enemy.zigzagDirection = 1;
+                } else if (enemy.posX >= (canvas.width - enemy.spriteWidth)) {
+                    enemy.posX = canvas.width - enemy.spriteWidth;
+                    enemy.zigzagDirection = -1;
+                }
+
+                if (enemy.hunterBurstShotsRemaining > 0 && nowTime >= enemy.hunterNextBurstAt) {
+                    fireVerticalShot(enemy);
+                    enemy.hunterBurstShotsRemaining--;
+                    enemy.hunterNextBurstAt = nowTime + 170;
+                }
+
+                if (nowTime >= enemy.hunterZigzagUntil) {
+                    enemy.hunterState = 'charge';
+                    enemy.hunterChargeCenterX = enemy.posX;
+                    enemy.hunterChargePhase = 0;
+                    enemy.hunterChargeUntil = nowTime + 700;
+                }
+            }
+        }
+
         this.update = function () {
             var movementSpeed = this.goDownSpeed;
             if (this.slowUntil && new Date().getTime() < this.slowUntil) {
                 movementSpeed = movementSpeed * 0.6;
             }
-            if (this.zigzagMotion) {
+            if (this.hunterMotion) {
+                updateHunterMovement(this, movementSpeed);
+            } else if (this.zigzagMotion) {
                 var horizontalSpeed = this.zigzagHorizontalSpeed || Math.max(1.6, movementSpeed * 1.35);
                 var verticalSpeed = this.zigzagVerticalSpeed || Math.max(0.75, movementSpeed * 0.9);
                 this.posY += verticalSpeed;
@@ -1248,6 +1389,9 @@ var game = (function () {
         var self = this;
 
         function shoot(enemy) {
+            if (enemy.enemyType === 3) {
+                return;
+            }
             if (enemy.shots > 0 && !enemy.dead && stageState === 'playing') {
                 var centerX = enemy.posX + (enemy.image.width / 2) - 5;
                 var baseY = enemy.posY + enemy.image.height;
@@ -1313,6 +1457,18 @@ var game = (function () {
             this.posY = -this.spriteHeight - getRandomNumber(60);
             this.circularCenterY = this.posY + (this.spriteHeight / 2) - (Math.sin(this.circularAngle) * this.circularRadiusY);
             this.posX = this.circularCenterX + Math.cos(this.circularAngle) * this.circularRadiusX - (this.spriteWidth / 2);
+        } else if (this.enemyType === 3) {
+            this.stopShooting();
+            this.hunterMotion = true;
+            this.hunterState = 'enter';
+            this.hunterEntryTargetY = 70 + getRandomNumber(110);
+            this.hunterChargeAmplitude = 20 + getRandomNumber(18);
+            this.hunterDashSpeed = Math.max(4.2, this.goDownSpeed * 3.8);
+            this.hunterReturnSpeed = Math.max(2.6, this.goDownSpeed * 2.4);
+            this.zigzagHorizontalSpeed = Math.max(1.5, this.goDownSpeed * 1.2);
+            this.zigzagVerticalSpeed = Math.max(0.6, this.goDownSpeed * 0.75);
+            this.posX = getRandomNumber(Math.max(1, canvas.width - this.spriteWidth));
+            this.posY = -this.spriteHeight - getRandomNumber(80);
         }
     }
 
