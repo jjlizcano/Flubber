@@ -23,24 +23,29 @@ var game = (function () {
         buffer,
         bufferctx,
         player,
-        evil,
         playerShot,
         bgMain,
         bgBoss,
-        evilSpeed = 1,
-        totalEvils = 7,
+        defaultEnemySpeed = 1,
+        totalLevels = 5,
+        phasesPerLevel = 10,
         playerLife = 3,
         shotSpeed = 5,
         playerSpeed = 5,
-        evilCounter = 0,
+        currentLevel = 1,
+        currentPhase = 1,
+        currentStageType = 'normal',
+        stageState = 'countdown',
+        stageMessage = '',
+        stageTransitionUntil = 0,
+        stageSummaryDuration = 2000,
+        stageCountdownDuration = 3000,
+        activeStageConfig,
         youLoose = false,
         congratulations = false,
         minHorizontalOffset = 100,
         maxHorizontalOffset = 400,
-        evilShots = 5,   // disparos que tiene el malo al principio
-        evilLife = 3,    // vidas que tiene el malo al principio (se van incrementando)
-        finalBossShots = 30,
-        finalBossLife = 12,
+        activeEnemies = [],
         totalBestScoresToShow = 5, // las mejores puntuaciones que se mostraran
         playerShotsBuffer = [],
         evilShotsBuffer = [],
@@ -64,6 +69,21 @@ var game = (function () {
         nextPlayerShot = 0,
         playerShotDelay = 250,
         now = 0;
+
+    var arcadeTheme = {
+        panelBg: 'rgba(25, 8, 32, 0.7)',
+        panelStroke: 'rgba(255, 180, 0, 0.75)',
+        primaryText: '#ffd447',
+        secondaryText: '#ff9f1a',
+        dangerText: '#ff4d5a',
+        successText: '#ffe880',
+        accentBoss: '#ff5470',
+        glow: 'rgba(255, 140, 0, 0.85)',
+        outline: '#2b122f',
+        hudFont: "bold 14px 'Courier New', monospace",
+        titleFont: "bold 28px 'Courier New', monospace",
+        countdownFont: "bold 58px 'Courier New', monospace"
+    };
 
     function loop() {
         update();
@@ -109,8 +129,7 @@ var game = (function () {
         bufferctx = buffer.getContext('2d');
 
         player = new Player(playerLife, 0);
-        evilCounter = 1;
-        createNewEvil();
+        startCountdown('Nivel 1 - Fase 1');
 
         showLifeAndScore();
 
@@ -125,14 +144,249 @@ var game = (function () {
     }
 
     function showLifeAndScore () {
-        bufferctx.fillStyle="rgb(59,59,59)";
-        bufferctx.font="bold 16px Arial";
-        bufferctx.fillText("Puntos: " + player.score, canvas.width - 100, 20);
-        bufferctx.fillText("Vidas: " + player.life, canvas.width - 100,40);
+        var hudHeight = 56;
+        drawArcadePanel(8, 8, canvas.width - 16, hudHeight, 0.65, 'rgba(255, 175, 0, 0.7)');
+
+        drawArcadeText('NIVEL ' + currentLevel + '  FASE ' + currentPhase, 18, 30, {
+            color: arcadeTheme.primaryText,
+            font: arcadeTheme.hudFont,
+            align: 'left',
+            glowColor: arcadeTheme.glow,
+            glowBlur: 5,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 3
+        });
+
+        drawArcadeText('ETAPA ' + (currentStageType === 'boss' ? 'JEFE' : 'NORMAL') +
+            '  ENEMIGOS ' + getAliveEnemiesCount(), 18, 49, {
+            color: arcadeTheme.secondaryText,
+            font: "bold 13px 'Courier New', monospace",
+            align: 'left',
+            glowColor: 'rgba(255, 80, 0, 0.75)',
+            glowBlur: 4,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
+
+        drawArcadeText('PUNTOS ' + player.score, canvas.width - 18, 30, {
+            color: '#fff3a3',
+            font: arcadeTheme.hudFont,
+            align: 'right',
+            glowColor: arcadeTheme.glow,
+            glowBlur: 4,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 3
+        });
+
+        drawArcadeText('VIDAS ' + player.life, canvas.width - 18, 49, {
+            color: '#ffd447',
+            font: "bold 13px 'Courier New', monospace",
+            align: 'right',
+            glowColor: 'rgba(255, 115, 0, 0.8)',
+            glowBlur: 4,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
     }
 
     function getRandomNumber(range) {
         return Math.floor(Math.random() * range);
+    }
+
+    function drawArcadePanel(x, y, width, height, alpha, borderColor) {
+        bufferctx.save();
+        bufferctx.fillStyle = arcadeTheme.panelBg;
+        bufferctx.globalAlpha = alpha || 1;
+        bufferctx.fillRect(x, y, width, height);
+        bufferctx.globalAlpha = 1;
+        bufferctx.strokeStyle = borderColor || arcadeTheme.panelStroke;
+        bufferctx.lineWidth = 2;
+        bufferctx.strokeRect(x + 1, y + 1, width - 2, height - 2);
+        bufferctx.restore();
+    }
+
+    function drawArcadeText(text, x, y, options) {
+        var style = options || {};
+        bufferctx.save();
+        bufferctx.font = style.font || arcadeTheme.hudFont;
+        bufferctx.textAlign = style.align || 'left';
+        bufferctx.textBaseline = style.baseline || 'middle';
+        bufferctx.lineJoin = 'round';
+        bufferctx.strokeStyle = style.outlineColor || arcadeTheme.outline;
+        bufferctx.lineWidth = style.outlineWidth || 3;
+        bufferctx.strokeText(text, x, y);
+        bufferctx.shadowColor = style.glowColor || arcadeTheme.glow;
+        bufferctx.shadowBlur = style.glowBlur || 6;
+        bufferctx.fillStyle = style.color || arcadeTheme.primaryText;
+        bufferctx.fillText(text, x, y);
+        bufferctx.restore();
+    }
+
+    function getCurrentStageConfig() {
+        var isBossStage = currentStageType === 'boss';
+        var enemyCount = 2 + Math.floor((currentPhase + 1) / 2) + currentLevel;
+        var baseEnemyLife = 2 + (currentLevel - 1) + Math.floor((currentPhase - 1) / 3);
+        var baseEnemyShots = 3 + currentLevel + Math.floor((currentPhase - 1) / 2);
+        var baseEnemySpeed = defaultEnemySpeed + ((currentLevel - 1) * 0.25) + ((currentPhase - 1) * 0.03);
+
+        return {
+            type: currentStageType,
+            enemyCount: isBossStage ? 1 : enemyCount,
+            enemyLife: baseEnemyLife,
+            enemyShots: baseEnemyShots,
+            enemySpeed: baseEnemySpeed,
+            enemyPoints: 4 + currentLevel + currentPhase,
+            bossLife: 10 + (currentLevel * 4),
+            bossShots: 20 + (currentLevel * 8),
+            bossSpeed: 0.8 + (currentLevel * 0.1),
+            bossPoints: 40 + (currentLevel * 10)
+        };
+    }
+
+    function getAliveEnemiesCount() {
+        var aliveEnemies = 0;
+        for (var i = 0; i < activeEnemies.length; i++) {
+            if (!activeEnemies[i].dead) {
+                aliveEnemies++;
+            }
+        }
+        return aliveEnemies;
+    }
+
+    function clearStageEntities() {
+        for (var i = 0; i < activeEnemies.length; i++) {
+            if (activeEnemies[i] && activeEnemies[i].stopShooting) {
+                activeEnemies[i].stopShooting();
+            }
+        }
+        activeEnemies.splice(0, activeEnemies.length);
+        evilShotsBuffer.splice(0, evilShotsBuffer.length);
+        playerShotsBuffer.splice(0, playerShotsBuffer.length);
+    }
+
+    function startSummary(message) {
+        stageState = 'summary';
+        stageMessage = message;
+        stageTransitionUntil = new Date().getTime() + stageSummaryDuration;
+        clearStageEntities();
+    }
+
+    function startCountdown(message) {
+        stageState = 'countdown';
+        stageMessage = message;
+        stageTransitionUntil = new Date().getTime() + stageCountdownDuration;
+        clearStageEntities();
+    }
+
+    function startCurrentStage() {
+        activeStageConfig = getCurrentStageConfig();
+        stageState = 'playing';
+        stageMessage = '';
+        spawnStageEnemies(activeStageConfig);
+    }
+
+    function spawnStageEnemies(stageConfig) {
+        var enemiesToCreate = stageConfig.enemyCount;
+        for (var i = 0; i < enemiesToCreate; i++) {
+            var enemy;
+            if (stageConfig.type === 'boss') {
+                enemy = new FinalBoss(stageConfig.bossLife, stageConfig.bossShots, stageConfig.bossSpeed);
+                enemy.pointsToKill = stageConfig.bossPoints;
+            } else {
+                enemy = new Evil(stageConfig.enemyLife, stageConfig.enemyShots, stageConfig.enemySpeed);
+                enemy.pointsToKill = stageConfig.enemyPoints;
+            }
+            activeEnemies.push(enemy);
+        }
+    }
+
+    function isStageCleared() {
+        for (var i = 0; i < activeEnemies.length; i++) {
+            if (!activeEnemies[i].dead) {
+                return false;
+            }
+        }
+        return activeEnemies.length > 0;
+    }
+
+    function handleStageCleared() {
+        if (currentStageType === 'boss') {
+            if (currentLevel === totalLevels) {
+                saveFinalScore();
+                congratulations = true;
+                clearStageEntities();
+                return;
+            }
+            currentLevel++;
+            currentPhase = 1;
+            currentStageType = 'normal';
+            startSummary('Nivel completado. Preparando Nivel ' + currentLevel);
+            return;
+        }
+
+        if (currentPhase === phasesPerLevel) {
+            currentStageType = 'boss';
+            startSummary('Fase ' + phasesPerLevel + ' completada. Se acerca el jefe');
+            return;
+        }
+
+        currentPhase++;
+        startSummary('Fase completada. Preparando Fase ' + currentPhase);
+    }
+
+    function drawTransitionOverlay() {
+        var centerX = canvas.width / 2;
+        var centerY = canvas.height / 2;
+        var overlayWidth = canvas.width - 120;
+        var overlayHeight = 190;
+        var overlayX = (canvas.width - overlayWidth) / 2;
+        var overlayY = centerY - (overlayHeight / 2);
+        var accentColor = currentStageType === 'boss' ? arcadeTheme.accentBoss : 'rgba(255, 170, 0, 0.9)';
+
+        drawArcadePanel(overlayX, overlayY, overlayWidth, overlayHeight, 0.9, accentColor);
+
+        drawArcadeText('CAMBIO DE ETAPA', centerX, overlayY + 42, {
+            color: '#ffe680',
+            font: "bold 18px 'Courier New', monospace",
+            align: 'center',
+            glowColor: accentColor,
+            glowBlur: 9,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 3
+        });
+
+        drawArcadeText(stageMessage.toUpperCase(), centerX, overlayY + 86, {
+            color: arcadeTheme.primaryText,
+            font: "bold 20px 'Courier New', monospace",
+            align: 'center',
+            glowColor: accentColor,
+            glowBlur: 8,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 3
+        });
+
+        if (stageState === 'countdown') {
+            var millisLeft = stageTransitionUntil - new Date().getTime();
+            var secondsLeft = Math.max(1, Math.ceil(millisLeft / 1000));
+            drawArcadeText('INICIO EN', centerX, overlayY + 124, {
+                color: '#ffcf63',
+                font: "bold 14px 'Courier New', monospace",
+                align: 'center',
+                glowColor: accentColor,
+                glowBlur: 6,
+                outlineColor: arcadeTheme.outline,
+                outlineWidth: 2
+            });
+            drawArcadeText(secondsLeft.toString(), centerX, overlayY + 160, {
+                color: '#fff3a3',
+                font: arcadeTheme.countdownFont,
+                align: 'center',
+                glowColor: accentColor,
+                glowBlur: 11,
+                outlineColor: arcadeTheme.outline,
+                outlineWidth: 4
+            });
+        }
     }
 
     function Player(life, score) {
@@ -172,18 +426,18 @@ var game = (function () {
         };
 
         player.killPlayer = function() {
-            if (this.life > 0) {
+            if (this.life > 1) {
                 this.dead = true;
                 evilShotsBuffer.splice(0, evilShotsBuffer.length);
                 playerShotsBuffer.splice(0, playerShotsBuffer.length);
                 this.src = playerKilledImage.src;
-                createNewEvil();
                 setTimeout(function () {
                     player = new Player(player.life - 1, player.score);
                 }, 500);
 
             } else {
                 saveFinalScore();
+                clearStageEntities();
                 youLoose = true;
             }
         };
@@ -208,10 +462,6 @@ var game = (function () {
 
     function PlayerShot (x, y) {
         Object.getPrototypeOf(PlayerShot.prototype).constructor.call(this, x, y, playerShotsBuffer, playerShotImage);
-        this.isHittingEvil = function() {
-            return (!evil.dead && this.posX >= evil.posX && this.posX <= (evil.posX + evil.image.width) &&
-                this.posY >= evil.posY && this.posY <= (evil.posY + evil.image.height));
-        };
     }
 
     PlayerShot.prototype = Object.create(Shot.prototype);
@@ -237,10 +487,11 @@ var game = (function () {
         this.animation = 0;
         this.posX = getRandomNumber(canvas.width - this.image.width);
         this.posY = -50;
-        this.life = life ? life : evilLife;
-        this.speed = evilSpeed;
-        this.shots = shots ? shots : evilShots;
+        this.life = life;
+        this.speed = defaultEnemySpeed;
+        this.shots = shots;
         this.dead = false;
+        this.shotTimeoutId = null;
 
         var desplazamientoHorizontal = minHorizontalOffset +
             getRandomNumber(maxHorizontalOffset - minHorizontalOffset);
@@ -250,10 +501,9 @@ var game = (function () {
 
 
         this.kill = function() {
+            this.stopShooting();
             this.dead = true;
-            totalEvils --;
             this.image = enemyImages.killed;
-            verifyToCreateNewEvil();
         };
 
         this.update = function () {
@@ -288,18 +538,28 @@ var game = (function () {
             return this.posY > (canvas.height + 15);
         };
 
-        function shoot() {
-            if (evil.shots > 0 && !evil.dead) {
-                var disparo = new EvilShot(evil.posX + (evil.image.width / 2) - 5 , evil.posY + evil.image.height);
+        var self = this;
+
+        function shoot(enemy) {
+            if (enemy.shots > 0 && !enemy.dead && stageState === 'playing') {
+                var disparo = new EvilShot(enemy.posX + (enemy.image.width / 2) - 5 , enemy.posY + enemy.image.height);
                 disparo.add();
-                evil.shots --;
-                setTimeout(function() {
-                    shoot();
+                enemy.shots --;
+                enemy.shotTimeoutId = setTimeout(function() {
+                    shoot(enemy);
                 }, getRandomNumber(3000));
             }
         }
-        setTimeout(function() {
-            shoot();
+
+        this.stopShooting = function() {
+            if (self.shotTimeoutId) {
+                clearTimeout(self.shotTimeoutId);
+                self.shotTimeoutId = null;
+            }
+        };
+
+        self.shotTimeoutId = setTimeout(function() {
+            shoot(self);
         }, 1000 + getRandomNumber(2500));
 
         this.toString = function () {
@@ -308,18 +568,20 @@ var game = (function () {
 
     }
 
-    function Evil (vidas, disparos) {
+    function Evil (vidas, disparos, velocidad) {
         Object.getPrototypeOf(Evil.prototype).constructor.call(this, vidas, disparos, evilImages);
-        this.goDownSpeed = evilSpeed;
-        this.pointsToKill = 5 + evilCounter;
+        this.speed = velocidad;
+        this.goDownSpeed = velocidad;
+        this.pointsToKill = 5;
     }
 
     Evil.prototype = Object.create(Enemy.prototype);
     Evil.prototype.constructor = Evil;
 
-    function FinalBoss () {
-        Object.getPrototypeOf(FinalBoss.prototype).constructor.call(this, finalBossLife, finalBossShots, bossImages);
-        this.goDownSpeed = evilSpeed/2;
+    function FinalBoss (vidas, disparos, velocidad) {
+        Object.getPrototypeOf(FinalBoss.prototype).constructor.call(this, vidas, disparos, bossImages);
+        this.speed = velocidad;
+        this.goDownSpeed = velocidad / 2;
         this.pointsToKill = 20;
     }
 
@@ -327,46 +589,35 @@ var game = (function () {
     FinalBoss.prototype.constructor = FinalBoss;
     /******************************* FIN ENEMIGOS *******************************/
 
-    function verifyToCreateNewEvil() {
-        if (totalEvils > 0) {
-            setTimeout(function() {
-                createNewEvil();
-                evilCounter ++;
-            }, getRandomNumber(3000));
-
-        } else {
-            setTimeout(function() {
-                saveFinalScore();
-                congratulations = true;
-            }, 2000);
-
-        }
+    function isEnemyHittingPlayer(enemy) {
+        return (((enemy.posY + enemy.image.height) > player.posY && (player.posY + player.height) >= enemy.posY) &&
+            ((player.posX >= enemy.posX && player.posX <= (enemy.posX + enemy.image.width)) ||
+                (player.posX + player.width >= enemy.posX && (player.posX + player.width) <= (enemy.posX + enemy.image.width))));
     }
 
-    function createNewEvil() {
-        if (totalEvils != 1) {
-            evil = new Evil(evilLife + evilCounter - 1, evilShots + evilCounter - 1);
-        } else {
-            evil = new FinalBoss();
+    function isAnyEnemyHittingPlayer() {
+        for (var i = 0; i < activeEnemies.length; i++) {
+            if (!activeEnemies[i].dead && isEnemyHittingPlayer(activeEnemies[i])) {
+                return true;
+            }
         }
-    }
-
-    function isEvilHittingPlayer() {
-        return ( ( (evil.posY + evil.image.height) > player.posY && (player.posY + player.height) >= evil.posY ) &&
-            ((player.posX >= evil.posX && player.posX <= (evil.posX + evil.image.width)) ||
-                (player.posX + player.width >= evil.posX && (player.posX + player.width) <= (evil.posX + evil.image.width))));
+        return false;
     }
 
     function checkCollisions(shot) {
-        if (shot.isHittingEvil()) {
-            if (evil.life > 1) {
-                evil.life--;
-            } else {
-                evil.kill();
-                player.score += evil.pointsToKill;
+        for (var i = 0; i < activeEnemies.length; i++) {
+            var enemy = activeEnemies[i];
+            if (!enemy.dead && shot.posX >= enemy.posX && shot.posX <= (enemy.posX + enemy.image.width) &&
+                shot.posY >= enemy.posY && shot.posY <= (enemy.posY + enemy.image.height)) {
+                if (enemy.life > 1) {
+                    enemy.life--;
+                } else {
+                    enemy.kill();
+                    player.score += enemy.pointsToKill;
+                }
+                shot.deleteShot(parseInt(shot.identifier));
+                return false;
             }
-            shot.deleteShot(parseInt(shot.identifier));
-            return false;
         }
         return true;
     }
@@ -410,18 +661,69 @@ var game = (function () {
     }
 
     function showGameOver() {
-        bufferctx.fillStyle="rgb(255,0,0)";
-        bufferctx.font="bold 35px Arial";
-        bufferctx.fillText("GAME OVER", canvas.width / 2 - 100, canvas.height / 2);
+        var centerX = canvas.width / 2;
+        var centerY = canvas.height / 2;
+        drawArcadePanel(100, centerY - 90, canvas.width - 200, 180, 0.9, 'rgba(255, 70, 80, 0.85)');
+        drawArcadeText('GAME OVER', centerX, centerY - 12, {
+            color: arcadeTheme.dangerText,
+            font: arcadeTheme.titleFont,
+            align: 'center',
+            glowColor: 'rgba(255, 40, 70, 0.95)',
+            glowBlur: 12,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 4
+        });
+        drawArcadeText('PULSA F5 PARA REINTENTAR', centerX, centerY + 34, {
+            color: '#ffd9a0',
+            font: "bold 13px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 90, 0, 0.75)',
+            glowBlur: 5,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
     }
 
     function showCongratulations () {
-        bufferctx.fillStyle="rgb(204,50,153)";
-        bufferctx.font="bold 22px Arial";
-        bufferctx.fillText("Enhorabuena, te has pasado el juego!", canvas.width / 2 - 200, canvas.height / 2 - 30);
-        bufferctx.fillText("PUNTOS: " + player.score, canvas.width / 2 - 200, canvas.height / 2);
-        bufferctx.fillText("VIDAS: " + player.life + " x 5", canvas.width / 2 - 200, canvas.height / 2 + 30);
-        bufferctx.fillText("PUNTUACION TOTAL: " + getTotalScore(), canvas.width / 2 - 200, canvas.height / 2 + 60);
+        var centerX = canvas.width / 2;
+        var centerY = canvas.height / 2;
+        drawArcadePanel(70, centerY - 120, canvas.width - 140, 240, 0.92, 'rgba(255, 208, 77, 0.9)');
+        drawArcadeText('VICTORIA TOTAL', centerX, centerY - 70, {
+            color: arcadeTheme.successText,
+            font: arcadeTheme.titleFont,
+            align: 'center',
+            glowColor: 'rgba(255, 185, 40, 0.9)',
+            glowBlur: 10,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 4
+        });
+        drawArcadeText('PUNTOS ' + player.score, centerX, centerY - 20, {
+            color: '#ffe680',
+            font: "bold 18px 'Courier New', monospace",
+            align: 'center',
+            glowColor: arcadeTheme.glow,
+            glowBlur: 7,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 3
+        });
+        drawArcadeText('VIDAS ' + player.life + ' x 5', centerX, centerY + 20, {
+            color: '#ffcf63',
+            font: "bold 18px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 120, 0, 0.8)',
+            glowBlur: 6,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 3
+        });
+        drawArcadeText('TOTAL ' + getTotalScore(), centerX, centerY + 62, {
+            color: '#fff3a3',
+            font: "bold 21px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 165, 0, 0.95)',
+            glowBlur: 11,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 4
+        });
     }
 
     function getTotalScore() {
@@ -442,23 +744,46 @@ var game = (function () {
             return;
         }
 
-        bufferctx.drawImage(player, player.posX, player.posY);
-        bufferctx.drawImage(evil.image, evil.posX, evil.posY);
+        if (stageState !== 'playing') {
+            drawTransitionOverlay();
+            showLifeAndScore();
+            if (new Date().getTime() >= stageTransitionUntil) {
+                if (stageState === 'summary') {
+                    startCountdown('Preparate para la siguiente etapa');
+                } else if (stageState === 'countdown') {
+                    startCurrentStage();
+                }
+            }
+            return;
+        }
 
-        updateEvil();
+        bufferctx.drawImage(player, player.posX, player.posY);
+        for (var e = 0; e < activeEnemies.length; e++) {
+            var enemy = activeEnemies[e];
+            if (enemy) {
+                bufferctx.drawImage(enemy.image, enemy.posX, enemy.posY);
+            }
+        }
+
+        updateEnemies();
 
         for (var j = 0; j < playerShotsBuffer.length; j++) {
             var disparoBueno = playerShotsBuffer[j];
             updatePlayerShot(disparoBueno, j);
         }
 
-        if (isEvilHittingPlayer()) {
+        if (!player.dead && isAnyEnemyHittingPlayer()) {
             player.killPlayer();
         } else {
             for (var i = 0; i < evilShotsBuffer.length; i++) {
                 var evilShot = evilShotsBuffer[i];
                 updateEvilShot(evilShot, i);
             }
+        }
+
+        if (isStageCleared()) {
+            handleStageCleared();
+            return;
         }
 
         showLifeAndScore();
@@ -483,6 +808,9 @@ var game = (function () {
     function updateEvilShot(evilShot, id) {
         if (evilShot) {
             evilShot.identifier = id;
+            if (player.dead) {
+                return;
+            }
             if (!evilShot.isHittingPlayer()) {
                 if (evilShot.posY <= canvas.height) {
                     evilShot.posY += evilShot.speed;
@@ -497,20 +825,18 @@ var game = (function () {
     }
 
     function drawBackground() {
-        var background;
-        if (evil instanceof FinalBoss) {
-            background = bgBoss;
-        } else {
-            background = bgMain;
-        }
+        var background = currentStageType === 'boss' ? bgBoss : bgMain;
         bufferctx.drawImage(background, 0, 0);
     }
 
-    function updateEvil() {
-        if (!evil.dead) {
-            evil.update();
-            if (evil.isOutOfScreen()) {
-                evil.kill();
+    function updateEnemies() {
+        for (var i = 0; i < activeEnemies.length; i++) {
+            var enemy = activeEnemies[i];
+            if (!enemy.dead) {
+                enemy.update();
+                if (enemy.isOutOfScreen()) {
+                    enemy.kill();
+                }
             }
         }
     }
