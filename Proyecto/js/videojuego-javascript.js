@@ -101,6 +101,48 @@ var game = (function () {
         2: { spriteIndex: 4, lifeBonus: 4, shotsBonus: 4, speedBonus: 0.10, pointsBonus: 15 }
     };
 
+    var rewardCatalog = {
+        cadence: { id: 'cadence', name: 'Mas cadencia', description: 'Disparas mas rapido', maxStacks: 3, oneTime: false, rarity: 'common' },
+        shield: { id: 'shield', name: 'Escudo', description: 'Absorbe un golpe', maxStacks: 3, oneTime: false, rarity: 'common' },
+        bigBullets: { id: 'bigBullets', name: 'Balas grandes', description: 'Aumenta tamano y alcance', maxStacks: 2, oneTime: false, rarity: 'uncommon' },
+        homing: { id: 'homing', name: 'Balas teledirigidas', description: 'Buscan enemigos cercanos', maxStacks: 1, oneTime: true, rarity: 'rare' },
+        life: { id: 'life', name: '+1 vida', description: 'Ganas una vida extra', maxStacks: 1, oneTime: true, rarity: 'rare' },
+        fogueo: { id: 'fogueo', name: 'Fogueo', description: 'Limpia balas enemigas periodicamente', maxStacks: 1, oneTime: true, rarity: 'rare' },
+        bounce: { id: 'bounce', name: 'Balas con rebote', description: 'Rebota una vez entre objetivos', maxStacks: 1, oneTime: true, rarity: 'uncommon' },
+        slow: { id: 'slow', name: 'Balas ralentizantes', description: 'Enemigos ralentizados al impactar', maxStacks: 2, oneTime: false, rarity: 'uncommon' },
+        speed: { id: 'speed', name: 'Mas velocidad', description: 'Mueve mas rapido la nave', maxStacks: 2, oneTime: false, rarity: 'common' },
+        points: { id: 'points', name: 'Multiplicador puntos', description: 'Mas puntos por enemigo', maxStacks: 2, oneTime: false, rarity: 'common' },
+        dodge: { id: 'dodge', name: 'Esquivo', description: 'Evita 1 disparo enemigo', maxStacks: 1, oneTime: true, rarity: 'rare' },
+        damage: { id: 'damage', name: 'Mas daño', description: 'Tus balas quitan mas vida', maxStacks: 2, oneTime: false, rarity: 'uncommon' }
+    };
+
+    var runUpgrades = {
+        cadenceStacks: 0,
+        shieldStacks: 0,
+        bigBulletStacks: 0,
+        homingStacks: 0,
+        lifeTaken: false,
+        fogueoTaken: false,
+        fogueoNextPulseAt: 0,
+        bounceStacks: 0,
+        slowStacks: 0,
+        speedStacks: 0,
+        pointsStacks: 0,
+        dodgeTaken: false,
+        damageStacks: 0
+    };
+
+    var rewardChoices = [];
+    var rewardSelectedIndex = 0;
+    var pendingRewardRewarded = false;
+    var playerShotDamage = 1;
+    var playerShotScale = 1;
+    var playerScoreMultiplier = 1;
+    var playerEffectiveSpeed = playerSpeed;
+    var maxPlayerLife = 5;
+    var fogueoPulseInterval = 7000;
+    var debugRewardsForTest = [];
+
     function loop() {
         update();
         draw();
@@ -133,6 +175,8 @@ var game = (function () {
     function init() {
 
         preloadImages();
+        resetRunUpgrades();
+        refreshPlayerStats();
 
         showBestScores();
 
@@ -145,6 +189,7 @@ var game = (function () {
         bufferctx = buffer.getContext('2d');
 
         player = new Player(playerLife, 0);
+        applyDebugRewardsForTest();
         startCountdown('Nivel 1 - Fase 1');
 
         showLifeAndScore();
@@ -157,6 +202,18 @@ var game = (function () {
             requestAnimFrame(anim);
         }
         anim();
+    }
+
+    function applyDebugRewardsForTest() {
+        if (!debugRewardsForTest || !debugRewardsForTest.length) {
+            return;
+        }
+        for (var i = 0; i < debugRewardsForTest.length; i++) {
+            var rewardId = debugRewardsForTest[i];
+            if (rewardCatalog[rewardId]) {
+                applyReward(rewardCatalog[rewardId]);
+            }
+        }
     }
 
     function showLifeAndScore () {
@@ -214,6 +271,302 @@ var game = (function () {
 
     function pickRandomFrom(array) {
         return array[getRandomNumber(array.length)];
+    }
+
+    function resetRunUpgrades() {
+        runUpgrades.cadenceStacks = 0;
+        runUpgrades.shieldStacks = 0;
+        runUpgrades.bigBulletStacks = 0;
+        runUpgrades.homingStacks = 0;
+        runUpgrades.lifeTaken = false;
+        runUpgrades.fogueoTaken = false;
+        runUpgrades.fogueoNextPulseAt = 0;
+        runUpgrades.bounceStacks = 0;
+        runUpgrades.slowStacks = 0;
+        runUpgrades.speedStacks = 0;
+        runUpgrades.pointsStacks = 0;
+        runUpgrades.dodgeTaken = false;
+        runUpgrades.damageStacks = 0;
+        rewardChoices = [];
+        rewardSelectedIndex = 0;
+        playerSpeed = 5;
+        playerShotDelay = 250;
+        playerShotDamage = 1;
+        playerShotScale = 1;
+        playerScoreMultiplier = 1;
+        playerEffectiveSpeed = playerSpeed;
+    }
+
+    function refreshPlayerStats() {
+        var cadenceMultiplier = 1 + (runUpgrades.cadenceStacks * 0.12);
+        playerShotDelay = Math.max(90, Math.round(250 / cadenceMultiplier));
+        playerShotScale = 1 + (runUpgrades.bigBulletStacks * 0.18);
+        playerShotDamage = 1 + runUpgrades.damageStacks;
+        playerScoreMultiplier = 1 + (runUpgrades.pointsStacks * 0.25);
+        playerEffectiveSpeed = 5 + (runUpgrades.speedStacks * 0.75);
+        playerSpeed = playerEffectiveSpeed;
+        if (player) {
+            player.speed = playerEffectiveSpeed;
+        }
+    }
+
+    function getRewardWeightsForStage(level, phase) {
+        if (level === 1) {
+            if (phase <= 2) {
+                return { cadence: 14, shield: 16, bigBullets: 12, slow: 12, fogueo: 8, bounce: 6, homing: 4, life: 2, speed: 12, points: 8, dodge: 2, damage: 4 };
+            }
+            if (phase <= 4) {
+                return { cadence: 13, shield: 14, bigBullets: 12, slow: 12, fogueo: 8, bounce: 8, homing: 6, life: 4, speed: 12, points: 8, dodge: 2, damage: 1 };
+            }
+            if (phase <= 6) {
+                return { cadence: 12, shield: 12, bigBullets: 10, slow: 12, fogueo: 8, bounce: 9, homing: 8, life: 6, speed: 11, points: 8, dodge: 2, damage: 2 };
+            }
+            if (phase <= 8) {
+                return { cadence: 11, shield: 10, bigBullets: 9, slow: 11, fogueo: 9, bounce: 10, homing: 10, life: 8, speed: 10, points: 8, dodge: 2, damage: 2 };
+            }
+            return { cadence: 10, shield: 9, bigBullets: 8, slow: 10, fogueo: 10, bounce: 10, homing: 12, life: 10, speed: 9, points: 8, dodge: 2, damage: 2 };
+        }
+
+        if (phase <= 2) {
+            return { cadence: 10, shield: 16, bigBullets: 10, slow: 12, fogueo: 10, bounce: 8, homing: 6, life: 4, speed: 10, points: 8, dodge: 2, damage: 4 };
+        }
+        if (phase <= 4) {
+            return { cadence: 9, shield: 14, bigBullets: 10, slow: 12, fogueo: 10, bounce: 10, homing: 8, life: 4, speed: 10, points: 8, dodge: 2, damage: 3 };
+        }
+        if (phase <= 6) {
+            return { cadence: 8, shield: 13, bigBullets: 9, slow: 12, fogueo: 10, bounce: 10, homing: 10, life: 6, speed: 10, points: 8, dodge: 2, damage: 2 };
+        }
+        if (phase <= 8) {
+            return { cadence: 7, shield: 12, bigBullets: 8, slow: 11, fogueo: 12, bounce: 12, homing: 12, life: 8, speed: 8, points: 6, dodge: 2, damage: 2 };
+        }
+        return { cadence: 6, shield: 11, bigBullets: 7, slow: 10, fogueo: 12, bounce: 11, homing: 11, life: 9, speed: 8, points: 5, dodge: 2, damage: 8 };
+    }
+
+    function isRewardAvailable(rewardId) {
+        switch (rewardId) {
+            case 'cadence': return runUpgrades.cadenceStacks < 3;
+            case 'shield': return runUpgrades.shieldStacks < 3;
+            case 'bigBullets': return runUpgrades.bigBulletStacks < 2;
+            case 'homing': return runUpgrades.homingStacks < 1;
+            case 'life': return !runUpgrades.lifeTaken && player.life < maxPlayerLife;
+            case 'fogueo': return !runUpgrades.fogueoTaken;
+            case 'bounce': return runUpgrades.bounceStacks < 1;
+            case 'slow': return runUpgrades.slowStacks < 2;
+            case 'speed': return runUpgrades.speedStacks < 2;
+            case 'points': return runUpgrades.pointsStacks < 2;
+            case 'dodge': return !runUpgrades.dodgeTaken;
+            case 'damage': return runUpgrades.damageStacks < 2;
+            default: return false;
+        }
+    }
+
+    function getAvailableRewardIds() {
+        var ids = [];
+        for (var key in rewardCatalog) {
+            if (rewardCatalog.hasOwnProperty(key) && isRewardAvailable(key)) {
+                ids.push(key);
+            }
+        }
+        return ids;
+    }
+
+    function pickWeightedReward(weights, excludedIds) {
+        excludedIds = excludedIds || [];
+        var pool = [];
+        var totalWeight = 0;
+        for (var id in rewardCatalog) {
+            if (rewardCatalog.hasOwnProperty(id) && isRewardAvailable(id) && excludedIds.indexOf(id) === -1) {
+                var weight = weights[id] || 0;
+                if (weight > 0) {
+                    totalWeight += weight;
+                    pool.push({ id: id, weight: weight, cumulative: totalWeight });
+                }
+            }
+        }
+        if (!pool.length) {
+            return null;
+        }
+        var roll = getRandomNumber(totalWeight) + 1;
+        for (var i = 0; i < pool.length; i++) {
+            if (roll <= pool[i].cumulative) {
+                return rewardCatalog[pool[i].id];
+            }
+        }
+        return rewardCatalog[pool[pool.length - 1].id];
+    }
+
+    function generateRewardChoices() {
+        var weights = getRewardWeightsForStage(currentLevel, currentPhase);
+        var first = pickWeightedReward(weights, []);
+        var excluded = first ? [first.id] : [];
+        var second = pickWeightedReward(weights, excluded);
+        var available = getAvailableRewardIds();
+
+        if (!first && available.length > 0) {
+            first = rewardCatalog[available[0]];
+        }
+        if (!second && available.length > 1) {
+            second = rewardCatalog[available[1]];
+        }
+        if (!second && first) {
+            second = first;
+        }
+
+        return [first, second];
+    }
+
+    function openRewardSelector() {
+        rewardChoices = generateRewardChoices();
+        rewardSelectedIndex = 0;
+        stageState = 'reward_pending';
+        stageMessage = 'Elige una recompensa';
+        stageTransitionUntil = 0;
+    }
+
+    function applyReward(reward) {
+        if (!reward) {
+            return;
+        }
+
+        switch (reward.id) {
+            case 'cadence':
+                runUpgrades.cadenceStacks = Math.min(3, runUpgrades.cadenceStacks + 1);
+                break;
+            case 'shield':
+                runUpgrades.shieldStacks = Math.min(3, runUpgrades.shieldStacks + 1);
+                break;
+            case 'bigBullets':
+                runUpgrades.bigBulletStacks = Math.min(2, runUpgrades.bigBulletStacks + 1);
+                break;
+            case 'homing':
+                runUpgrades.homingStacks = 1;
+                break;
+            case 'life':
+                runUpgrades.lifeTaken = true;
+                if (player.life < maxPlayerLife) {
+                    player.life = Math.min(maxPlayerLife, player.life + 1);
+                }
+                break;
+            case 'fogueo':
+                runUpgrades.fogueoTaken = true;
+                triggerFogueoPulse();
+                break;
+            case 'bounce':
+                runUpgrades.bounceStacks = 1;
+                break;
+            case 'slow':
+                runUpgrades.slowStacks = Math.min(2, runUpgrades.slowStacks + 1);
+                break;
+            case 'speed':
+                runUpgrades.speedStacks = Math.min(2, runUpgrades.speedStacks + 1);
+                break;
+            case 'points':
+                runUpgrades.pointsStacks = Math.min(2, runUpgrades.pointsStacks + 1);
+                break;
+            case 'dodge':
+                runUpgrades.dodgeTaken = true;
+                break;
+            case 'damage':
+                runUpgrades.damageStacks = Math.min(2, runUpgrades.damageStacks + 1);
+                break;
+        }
+
+        refreshPlayerStats();
+    }
+
+    function confirmSelectedReward() {
+        var selectedReward = rewardChoices[rewardSelectedIndex] || rewardChoices[0];
+        applyReward(selectedReward);
+        rewardChoices = [];
+        rewardSelectedIndex = 0;
+        completeStageClear();
+    }
+
+    function drawRewardSelector() {
+        var centerX = canvas.width / 2;
+        var centerY = canvas.height / 2;
+        var cardWidth = 220;
+        var cardHeight = 120;
+        var gap = 28;
+        var leftCardX = centerX - cardWidth - (gap / 2);
+        var rightCardX = centerX + (gap / 2);
+        var cardY = centerY - 58;
+
+        drawArcadePanel(40, centerY - 145, canvas.width - 80, 280, 0.9, 'rgba(180, 100, 255, 0.9)');
+        drawArcadeText('ELIGE TU RECOMPENSA', centerX, centerY - 118, {
+            color: '#fff3a3',
+            font: "bold 18px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 170, 0, 0.95)',
+            glowBlur: 10,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 3
+        });
+
+        drawRewardCard(leftCardX, cardY, cardWidth, cardHeight, rewardChoices[0], rewardSelectedIndex === 0, 'IZQUIERDA');
+        drawRewardCard(rightCardX, cardY, cardWidth, cardHeight, rewardChoices[1], rewardSelectedIndex === 1, 'DERECHA');
+
+        drawArcadeText('USA IZQUIERDA / DERECHA Y ESPACIO', centerX, centerY + 88, {
+            color: '#ffcf63',
+            font: "bold 12px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 120, 0, 0.8)',
+            glowBlur: 5,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
+    }
+
+    function drawRewardCard(x, y, width, height, reward, selected, sideLabel) {
+        var borderColor = selected ? 'rgba(0, 255, 140, 0.95)' : 'rgba(255, 175, 0, 0.7)';
+        drawArcadePanel(x, y, width, height, 0.8, borderColor);
+        drawArcadeText(sideLabel, x + (width / 2), y + 20, {
+            color: selected ? '#7dffb4' : '#ffe680',
+            font: "bold 12px 'Courier New', monospace",
+            align: 'center',
+            glowColor: selected ? 'rgba(0, 255, 140, 0.9)' : 'rgba(255, 170, 0, 0.8)',
+            glowBlur: 6,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
+
+        if (reward) {
+            drawArcadeText(reward.name, x + (width / 2), y + 52, {
+                color: arcadeTheme.primaryText,
+                font: "bold 14px 'Courier New', monospace",
+                align: 'center',
+                glowColor: arcadeTheme.glow,
+                glowBlur: 6,
+                outlineColor: arcadeTheme.outline,
+                outlineWidth: 2
+            });
+            drawArcadeText(reward.description, x + (width / 2), y + 80, {
+                color: '#fff3a3',
+                font: "bold 11px 'Courier New', monospace",
+                align: 'center',
+                glowColor: 'rgba(255, 120, 0, 0.5)',
+                glowBlur: 4,
+                outlineColor: arcadeTheme.outline,
+                outlineWidth: 1
+            });
+        }
+    }
+
+    function clearEnemyProjectiles() {
+        if (evilShotsBuffer.length > 0) {
+            evilShotsBuffer.splice(0, evilShotsBuffer.length);
+        }
+    }
+
+    function updateRewardEffects() {
+        if (runUpgrades.fogueoTaken && runUpgrades.fogueoNextPulseAt && new Date().getTime() >= runUpgrades.fogueoNextPulseAt) {
+            triggerFogueoPulse();
+        }
+    }
+
+    function triggerFogueoPulse() {
+        clearEnemyProjectiles();
+        runUpgrades.fogueoNextPulseAt = new Date().getTime() + fogueoPulseInterval;
     }
 
     function drawArcadePanel(x, y, width, height, alpha, borderColor) {
@@ -332,6 +685,13 @@ var game = (function () {
             return { min: 1200, max: 1800 };
         }
         return { min: 900, max: 1400 };
+    }
+
+    function shouldOpenRewardSelector() {
+        if (currentStageType === 'boss') {
+            return true;
+        }
+        return currentStageType === 'normal' && currentPhase % 2 === 0;
     }
 
     function getAliveEnemiesCount() {
@@ -472,6 +832,15 @@ var game = (function () {
     }
 
     function handleStageCleared() {
+        if (shouldOpenRewardSelector()) {
+            openRewardSelector();
+            return;
+        }
+
+        completeStageClear();
+    }
+
+    function completeStageClear() {
         if (currentStageType === 'boss') {
             if (currentLevel === totalLevels) {
                 saveFinalScore();
@@ -564,10 +933,17 @@ var game = (function () {
         player.score = score;
         player.dead = false;
         player.speed = playerSpeed;
+        player.invulnerableUntil = 0;
 
         var shoot = function () {
             if (nextPlayerShot < now || now == 0) {
                 playerShot = new PlayerShot(player.posX + (player.width / 2) - 5 , player.posY);
+                playerShot.damage = playerShotDamage;
+                playerShot.scale = playerShotScale;
+                playerShot.remainingBounces = runUpgrades.bounceStacks;
+                playerShot.isHoming = runUpgrades.homingStacks > 0;
+                playerShot.vx = 0;
+                playerShot.vy = -playerShot.speed;
                 playerShot.add();
                 now += playerShotDelay;
                 nextPlayerShot = now + playerShotDelay;
@@ -655,6 +1031,7 @@ var game = (function () {
         this.shots = shots;
         this.dead = false;
         this.shotTimeoutId = null;
+        this.slowUntil = 0;
 
         var desplazamientoHorizontal = minHorizontalOffset +
             getRandomNumber(maxHorizontalOffset - minHorizontalOffset);
@@ -670,20 +1047,24 @@ var game = (function () {
         };
 
         this.update = function () {
-            this.posY += this.goDownSpeed;
+            var movementSpeed = this.goDownSpeed;
+            if (this.slowUntil && new Date().getTime() < this.slowUntil) {
+                movementSpeed = movementSpeed * 0.6;
+            }
+            this.posY += movementSpeed;
             if (this.direction === 'D') {
                 if (this.posX <= this.maxX) {
-                    this.posX += this.speed;
+                    this.posX += movementSpeed;
                 } else {
                     this.direction = 'I';
-                    this.posX -= this.speed;
+                    this.posX -= movementSpeed;
                 }
             } else {
                 if (this.posX >= this.minX) {
-                    this.posX -= this.speed;
+                    this.posX -= movementSpeed;
                 } else {
                     this.direction = 'D';
-                    this.posX += this.speed;
+                    this.posX += movementSpeed;
                 }
             }
             this.animation++;
@@ -776,14 +1157,34 @@ var game = (function () {
     function checkCollisions(shot) {
         for (var i = 0; i < activeEnemies.length; i++) {
             var enemy = activeEnemies[i];
-            if (!enemy.dead && shot.posX >= enemy.posX && shot.posX <= (enemy.posX + enemy.image.width) &&
-                shot.posY >= enemy.posY && shot.posY <= (enemy.posY + enemy.image.height)) {
-                if (enemy.life > 1) {
-                    enemy.life--;
-                } else {
-                    enemy.kill();
-                    player.score += enemy.pointsToKill;
+            var shotWidth = Math.max(10, Math.round(10 * (shot.scale || 1)));
+            var shotHeight = Math.max(18, Math.round(20 * (shot.scale || 1)));
+            var shotLeft = shot.posX - (shotWidth / 2);
+            var shotRight = shotLeft + shotWidth;
+            var shotTop = shot.posY;
+            var shotBottom = shotTop + shotHeight;
+            if (!enemy.dead && shotLeft <= (enemy.posX + enemy.image.width) && shotRight >= enemy.posX &&
+                shotTop <= (enemy.posY + enemy.image.height) && shotBottom >= enemy.posY) {
+                var damage = shot.damage || playerShotDamage || 1;
+                enemy.life -= damage;
+                if (runUpgrades.slowStacks > 0) {
+                    enemy.slowUntil = new Date().getTime() + 2500;
                 }
+                if (enemy.life <= 0) {
+                    enemy.kill();
+                    player.score += Math.round(enemy.pointsToKill * playerScoreMultiplier);
+                }
+
+                if ((shot.remainingBounces || 0) > 0) {
+                    shot.remainingBounces = 0;
+                    shot.isHoming = false;
+                    shot.vy = -Math.max(2, shot.speed * 0.75);
+                    shot.vx = getBounceHorizontalSpeed(shot, enemy);
+                    shot.posX = enemy.posX + (enemy.image.width / 2);
+                    shot.posY = enemy.posY - shotHeight - 2;
+                    return 'keep';
+                }
+
                 shot.deleteShot(parseInt(shot.identifier));
                 return false;
             }
@@ -807,6 +1208,25 @@ var game = (function () {
 
     function keyDown(e) {
         var key = (window.event ? e.keyCode : e.which);
+
+        if (stageState === 'reward_pending') {
+            if (key === keyMap.left) {
+                rewardSelectedIndex = 0;
+                e.preventDefault();
+                return;
+            }
+            if (key === keyMap.right) {
+                rewardSelectedIndex = 1;
+                e.preventDefault();
+                return;
+            }
+            if (key === keyMap.fire) {
+                confirmSelectedReward();
+                e.preventDefault();
+                return;
+            }
+        }
+
         for (var inkey in keyMap) {
             if (key === keyMap[inkey]) {
                 e.preventDefault();
@@ -902,6 +1322,13 @@ var game = (function () {
     function update() {
 
         drawBackground();
+        updateRewardEffects();
+
+        if (stageState === 'reward_pending') {
+            drawRewardSelector();
+            showLifeAndScore();
+            return;
+        }
 
         if (congratulations) {
             showCongratulations();
@@ -942,7 +1369,7 @@ var game = (function () {
         }
 
         if (!player.dead && isAnyEnemyHittingPlayer()) {
-            player.killPlayer();
+            handlePlayerDamage(false);
         } else {
             for (var i = 0; i < evilShotsBuffer.length; i++) {
                 var evilShot = evilShotsBuffer[i];
@@ -963,15 +1390,34 @@ var game = (function () {
     function updatePlayerShot(playerShot, id) {
         if (playerShot) {
             playerShot.identifier = id;
-            if (checkCollisions(playerShot)) {
-                if (playerShot.posY > 0) {
-                    playerShot.posY -= playerShot.speed;
-                    bufferctx.drawImage(playerShot.image, playerShot.posX, playerShot.posY);
+            if (playerShot.isHoming && !(playerShot.vx || 0)) {
+                steerPlayerShot(playerShot);
+            }
+            var collisionResult = checkCollisions(playerShot);
+            if (collisionResult === true || collisionResult === 'keep') {
+                if (isPlayerShotInBounds(playerShot)) {
+                    movePlayerShot(playerShot);
+                    drawPlayerShot(playerShot);
                 } else {
                     playerShot.deleteShot(parseInt(playerShot.identifier));
                 }
             }
         }
+    }
+
+    function movePlayerShot(playerShot) {
+        var vx = typeof playerShot.vx === 'number' ? playerShot.vx : 0;
+        var vy = typeof playerShot.vy === 'number' ? playerShot.vy : -playerShot.speed;
+        playerShot.posX += vx;
+        playerShot.posY += vy;
+    }
+
+    function isPlayerShotInBounds(playerShot) {
+        var width = Math.max(10, Math.round(10 * (playerShot.scale || 1)));
+        var height = Math.max(18, Math.round(20 * (playerShot.scale || 1)));
+        return playerShot.posY > -height &&
+            playerShot.posX > -width &&
+            playerShot.posX < (canvas.width + width);
     }
 
     function updateEvilShot(evilShot, id) {
@@ -988,7 +1434,8 @@ var game = (function () {
                     evilShot.deleteShot(parseInt(evilShot.identifier));
                 }
             } else {
-                player.killPlayer();
+                handlePlayerDamage(true);
+                evilShot.deleteShot(parseInt(evilShot.identifier));
             }
         }
     }
@@ -1008,6 +1455,87 @@ var game = (function () {
                 }
             }
         }
+    }
+
+    function steerPlayerShot(playerShot) {
+        var target = getNearestEnemyToShot(playerShot);
+        if (!target) {
+            return;
+        }
+        var targetCenter = target.posX + (target.image.width / 2);
+        var shotCenter = playerShot.posX;
+        var steerAmount = 2 + runUpgrades.homingStacks;
+        if (targetCenter > shotCenter) {
+            playerShot.posX += Math.min(steerAmount, targetCenter - shotCenter);
+        } else if (targetCenter < shotCenter) {
+            playerShot.posX -= Math.min(steerAmount, shotCenter - targetCenter);
+        }
+    }
+
+    function getNearestEnemyToShot(playerShot) {
+        var nearestEnemy = null;
+        var nearestDistance = null;
+        for (var i = 0; i < activeEnemies.length; i++) {
+            var enemy = activeEnemies[i];
+            if (enemy.dead) {
+                continue;
+            }
+            var enemyCenter = enemy.posX + (enemy.image.width / 2);
+            var distance = Math.abs(enemyCenter - playerShot.posX) + Math.max(0, playerShot.posY - enemy.posY);
+            if (nearestDistance === null || distance < nearestDistance) {
+                nearestDistance = distance;
+                nearestEnemy = enemy;
+            }
+        }
+        return nearestEnemy;
+    }
+
+    function getBounceHorizontalSpeed(playerShot, impactedEnemy) {
+        var nearestEnemy = null;
+        var nearestDistance = null;
+        for (var i = 0; i < activeEnemies.length; i++) {
+            var enemy = activeEnemies[i];
+            if (enemy.dead || enemy === impactedEnemy) {
+                continue;
+            }
+            var enemyCenter = enemy.posX + (enemy.image.width / 2);
+            var distance = Math.abs(enemyCenter - playerShot.posX);
+            if (nearestDistance === null || distance < nearestDistance) {
+                nearestDistance = distance;
+                nearestEnemy = enemy;
+            }
+        }
+
+        var horizontalSpeed = Math.max(1.5, playerShot.speed * 0.65);
+        if (nearestEnemy) {
+            return (nearestEnemy.posX + (nearestEnemy.image.width / 2)) >= playerShot.posX ? horizontalSpeed : -horizontalSpeed;
+        }
+        return getRandomNumber(2) === 0 ? -horizontalSpeed : horizontalSpeed;
+    }
+
+    function drawPlayerShot(playerShot) {
+        var width = Math.max(10, Math.round(10 * (playerShot.scale || 1)));
+        var height = Math.max(18, Math.round(20 * (playerShot.scale || 1)));
+        bufferctx.drawImage(playerShot.image, playerShot.posX - (width / 2), playerShot.posY, width, height);
+    }
+
+    function handlePlayerDamage(fromProjectile) {
+        var nowTime = new Date().getTime();
+        if (player.invulnerableUntil && nowTime < player.invulnerableUntil) {
+            return;
+        }
+        if (fromProjectile && runUpgrades.dodgeTaken) {
+            runUpgrades.dodgeTaken = false;
+            player.invulnerableUntil = nowTime + 800;
+            return;
+        }
+        if (runUpgrades.shieldStacks > 0) {
+            runUpgrades.shieldStacks--;
+            player.invulnerableUntil = nowTime + 800;
+            return;
+        }
+        player.invulnerableUntil = nowTime + 800;
+        player.killPlayer();
     }
 
     /******************************* MEJORES PUNTUACIONES (LOCALSTORAGE) *******************************/
