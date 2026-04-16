@@ -1155,6 +1155,14 @@ var game = (function () {
         this.zigzagDirection = 1;
         this.zigzagHorizontalSpeed = 0;
         this.zigzagVerticalSpeed = 0;
+        this.circularMotion = false;
+        this.circularAngle = 0;
+        this.circularRadiusX = 0;
+        this.circularRadiusY = 0;
+        this.circularCenterX = 0;
+        this.circularCenterY = 0;
+        this.circularOrbitSpeed = 0;
+        this.circularVerticalDrift = 0;
 
         var desplazamientoHorizontal = minHorizontalOffset +
             getRandomNumber(maxHorizontalOffset - minHorizontalOffset);
@@ -1188,6 +1196,19 @@ var game = (function () {
                 } else if (this.posX >= (canvas.width - this.spriteWidth)) {
                     this.posX = canvas.width - this.spriteWidth;
                     this.zigzagDirection = -1;
+                }
+            } else if (this.circularMotion) {
+                var orbitSpeed = this.circularOrbitSpeed || Math.max(0.03, movementSpeed * 0.04);
+                this.circularAngle += orbitSpeed;
+                this.circularCenterY += this.circularVerticalDrift || Math.max(0.25, movementSpeed * 0.35);
+
+                this.posX = this.circularCenterX + Math.cos(this.circularAngle) * this.circularRadiusX - (this.spriteWidth / 2);
+                this.posY = this.circularCenterY + Math.sin(this.circularAngle) * this.circularRadiusY - (this.spriteHeight / 2);
+
+                if (this.posX < 0) {
+                    this.posX = 0;
+                } else if (this.posX > (canvas.width - this.spriteWidth)) {
+                    this.posX = canvas.width - this.spriteWidth;
                 }
             } else {
                 this.posY += movementSpeed;
@@ -1228,8 +1249,20 @@ var game = (function () {
 
         function shoot(enemy) {
             if (enemy.shots > 0 && !enemy.dead && stageState === 'playing') {
-                var disparo = new EvilShot(enemy.posX + (enemy.image.width / 2) - 5 , enemy.posY + enemy.image.height);
-                disparo.add();
+                var centerX = enemy.posX + (enemy.image.width / 2) - 5;
+                var baseY = enemy.posY + enemy.image.height;
+                if (enemy.enemyType === 2) {
+                    var leftShot = new EvilShot(centerX - 8, baseY);
+                    leftShot.vx = -2.2;
+                    leftShot.add();
+
+                    var rightShot = new EvilShot(centerX + 8, baseY);
+                    rightShot.vx = 2.2;
+                    rightShot.add();
+                } else {
+                    var disparo = new EvilShot(centerX, baseY);
+                    disparo.add();
+                }
                 enemy.shots --;
                 enemy.shotTimeoutId = setTimeout(function() {
                     shoot(enemy);
@@ -1268,6 +1301,18 @@ var game = (function () {
             this.minX = 0;
             this.maxX = canvas.width - this.spriteWidth;
             this.direction = this.zigzagDirection > 0 ? 'D' : 'I';
+        } else if (this.enemyType === 2) {
+            this.circularMotion = true;
+            this.circularAngle = getRandomNumber(360) * (Math.PI / 180);
+            this.circularRadiusX = 55 + getRandomNumber(40);
+            this.circularRadiusY = 35 + getRandomNumber(25);
+            this.circularOrbitSpeed = 0.03 + (this.goDownSpeed * 0.025);
+            this.circularVerticalDrift = Math.max(0.25, this.goDownSpeed * 0.35);
+            this.circularCenterX = this.spriteWidth + this.circularRadiusX +
+                getRandomNumber(Math.max(1, canvas.width - (this.circularRadiusX * 2) - (this.spriteWidth * 2)));
+            this.posY = -this.spriteHeight - getRandomNumber(60);
+            this.circularCenterY = this.posY + (this.spriteHeight / 2) - (Math.sin(this.circularAngle) * this.circularRadiusY);
+            this.posX = this.circularCenterX + Math.cos(this.circularAngle) * this.circularRadiusX - (this.spriteWidth / 2);
         }
     }
 
@@ -1574,8 +1619,10 @@ var game = (function () {
                 return;
             }
             if (!evilShot.isHittingPlayer()) {
-                if (evilShot.posY <= canvas.height) {
-                    evilShot.posY += evilShot.speed;
+                var vx = typeof evilShot.vx === 'number' ? evilShot.vx : 0;
+                evilShot.posX += vx;
+                evilShot.posY += evilShot.speed;
+                if (evilShot.posY <= canvas.height && evilShot.posX >= -40 && evilShot.posX <= (canvas.width + 40)) {
                     bufferctx.drawImage(evilShot.image, evilShot.posX, evilShot.posY);
                 } else {
                     evilShot.deleteShot(parseInt(evilShot.identifier));
