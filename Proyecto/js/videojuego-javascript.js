@@ -1179,6 +1179,14 @@ var game = (function () {
         this.hunterZigzagUntil = 0;
         this.hunterBurstShotsRemaining = 0;
         this.hunterNextBurstAt = 0;
+        this.strikeMotion = false;
+        this.strikePhase = 0;
+        this.strikeDirection = 1;
+        this.strikePhaseUntil = 0;
+        this.strikeHorizontalSpeed = 0;
+        this.strikeVerticalSpeed = 0;
+        this.strikeHorizontalDuration = 0;
+        this.strikeVerticalDuration = 0;
 
         var desplazamientoHorizontal = minHorizontalOffset +
             getRandomNumber(maxHorizontalOffset - minHorizontalOffset);
@@ -1318,6 +1326,41 @@ var game = (function () {
             }
         }
 
+        function updateStrikeMovement(enemy, movementSpeed) {
+            var nowTime = new Date().getTime();
+            var horizontalSpeed = enemy.strikeHorizontalSpeed || Math.max(1.4, movementSpeed * 1.35);
+            var verticalSpeed = enemy.strikeVerticalSpeed || Math.max(0.7, movementSpeed * 0.95);
+
+            if (!enemy.strikePhaseUntil) {
+                enemy.strikePhaseUntil = nowTime + (enemy.strikePhase === 1 ? enemy.strikeVerticalDuration : enemy.strikeHorizontalDuration);
+            }
+
+            if (enemy.strikePhase === 1) {
+                enemy.posY += verticalSpeed;
+            } else {
+                var direction = enemy.strikePhase === 0 ? enemy.strikeDirection : -enemy.strikeDirection;
+                enemy.posX += (horizontalSpeed * direction);
+                if (enemy.posX <= 0) {
+                    enemy.posX = 0;
+                    enemy.strikePhaseUntil = nowTime;
+                } else if (enemy.posX >= (canvas.width - enemy.spriteWidth)) {
+                    enemy.posX = canvas.width - enemy.spriteWidth;
+                    enemy.strikePhaseUntil = nowTime;
+                }
+            }
+
+            if (nowTime >= enemy.strikePhaseUntil) {
+                if (enemy.strikePhase === 0) {
+                    enemy.strikePhase = 1;
+                } else if (enemy.strikePhase === 1) {
+                    enemy.strikePhase = 2;
+                } else {
+                    enemy.strikePhase = 0;
+                }
+                enemy.strikePhaseUntil = nowTime + (enemy.strikePhase === 1 ? enemy.strikeVerticalDuration : enemy.strikeHorizontalDuration);
+            }
+        }
+
         this.update = function () {
             var movementSpeed = this.goDownSpeed;
             if (this.slowUntil && new Date().getTime() < this.slowUntil) {
@@ -1325,6 +1368,8 @@ var game = (function () {
             }
             if (this.hunterMotion) {
                 updateHunterMovement(this, movementSpeed);
+            } else if (this.strikeMotion) {
+                updateStrikeMovement(this, movementSpeed);
             } else if (this.zigzagMotion) {
                 var horizontalSpeed = this.zigzagHorizontalSpeed || Math.max(1.6, movementSpeed * 1.35);
                 var verticalSpeed = this.zigzagVerticalSpeed || Math.max(0.75, movementSpeed * 0.9);
@@ -1403,6 +1448,15 @@ var game = (function () {
                     var rightShot = new EvilShot(centerX + 8, baseY);
                     rightShot.vx = 2.2;
                     rightShot.add();
+                } else if (enemy.enemyType === 4) {
+                    var zigzagShot = new EvilShot(centerX, baseY);
+                    zigzagShot.vx = 0;
+                    zigzagShot.waveMotion = true;
+                    zigzagShot.waveBaseX = centerX;
+                    zigzagShot.wavePhase = 0;
+                    zigzagShot.waveAmplitude = 9;
+                    zigzagShot.waveFrequency = 0.55;
+                    zigzagShot.add();
                 } else {
                     var disparo = new EvilShot(centerX, baseY);
                     disparo.add();
@@ -1469,6 +1523,17 @@ var game = (function () {
             this.zigzagVerticalSpeed = Math.max(0.6, this.goDownSpeed * 0.75);
             this.posX = getRandomNumber(Math.max(1, canvas.width - this.spriteWidth));
             this.posY = -this.spriteHeight - getRandomNumber(80);
+        } else if (this.enemyType === 4) {
+            this.strikeMotion = true;
+            this.strikePhase = 0;
+            this.strikeDirection = getRandomNumber(2) === 0 ? -1 : 1;
+            this.strikeHorizontalSpeed = Math.max(1.6, this.goDownSpeed * 1.4);
+            this.strikeVerticalSpeed = Math.max(0.75, this.goDownSpeed);
+            this.strikeHorizontalDuration = 1150 + getRandomNumber(420);
+            this.strikeVerticalDuration = 420 + getRandomNumber(180);
+            this.strikePhaseUntil = 0;
+            this.posX = getRandomNumber(Math.max(1, canvas.width - this.spriteWidth));
+            this.posY = -this.spriteHeight - getRandomNumber(70);
         }
     }
 
@@ -1776,7 +1841,13 @@ var game = (function () {
             }
             if (!evilShot.isHittingPlayer()) {
                 var vx = typeof evilShot.vx === 'number' ? evilShot.vx : 0;
-                evilShot.posX += vx;
+                if (evilShot.waveMotion) {
+                    evilShot.waveBaseX = (typeof evilShot.waveBaseX === 'number' ? evilShot.waveBaseX : evilShot.posX) + vx;
+                    evilShot.wavePhase = (evilShot.wavePhase || 0) + (evilShot.waveFrequency || 0.5);
+                    evilShot.posX = evilShot.waveBaseX + Math.sin(evilShot.wavePhase) * (evilShot.waveAmplitude || 8);
+                } else {
+                    evilShot.posX += vx;
+                }
                 evilShot.posY += evilShot.speed;
                 if (evilShot.posY <= canvas.height && evilShot.posX >= -40 && evilShot.posX <= (canvas.width + 40)) {
                     bufferctx.drawImage(evilShot.image, evilShot.posX, evilShot.posY);
