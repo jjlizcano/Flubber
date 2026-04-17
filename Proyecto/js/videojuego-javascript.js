@@ -39,6 +39,7 @@ var game = (function () {
     var shotEntities = null;
     var playerEntityFactory = null;
     var enemyEntityFactory = null;
+    var stageManager = null;
 
     // Variables globales a la aplicacion
     var canvas,
@@ -255,6 +256,24 @@ var game = (function () {
         if (assetsLoaded >= assetsTotal && typeof onComplete === 'function') {
             onComplete();
         }
+    }
+
+    function syncStageStateFromManager() {
+        if (!stageManager) {
+            return;
+        }
+
+        var stageSnapshot = stageManager.getState();
+        currentLevel = stageSnapshot.currentLevel;
+        currentPhase = stageSnapshot.currentPhase;
+        currentStageType = stageSnapshot.currentStageType;
+        stageState = stageSnapshot.stageState;
+        stageMessage = stageSnapshot.stageMessage;
+        stageTransitionUntil = stageSnapshot.stageTransitionUntil;
+        activeStageConfig = stageSnapshot.activeStageConfig;
+        pendingStageSpawns = stageSnapshot.pendingStageSpawns;
+        spawnedStageEnemies = stageSnapshot.spawnedStageEnemies;
+        stageSpawnTimeout = stageSnapshot.stageSpawnTimeout;
     }
 
     function drawLoadingScreen() {
@@ -540,6 +559,55 @@ var game = (function () {
             throw new Error('FlubberEnemyEntity module is required to create enemies');
         }
 
+        stageManager = window.FlubberStageManager ? window.FlubberStageManager.create({
+            totalLevels: totalLevels,
+            phasesPerLevel: phasesPerLevel,
+            defaultEnemySpeed: defaultEnemySpeed,
+            stageSummaryDuration: stageSummaryDuration,
+            stageCountdownDuration: stageCountdownDuration,
+            getNow: function () {
+                return new Date().getTime();
+            },
+            getRandomInRange: getRandomInRange,
+            getAliveEnemiesCount: getAliveEnemiesCount,
+            hasAliveEnemies: function () {
+                return getAliveEnemiesCount() > 0;
+            },
+            clearStageEntitiesContent: function () {
+                for (var i = 0; i < activeEnemies.length; i++) {
+                    if (activeEnemies[i] && activeEnemies[i].stopShooting) {
+                        activeEnemies[i].stopShooting();
+                    }
+                }
+                activeEnemies.splice(0, activeEnemies.length);
+                evilShotsBuffer.splice(0, evilShotsBuffer.length);
+                playerShotsBuffer.splice(0, playerShotsBuffer.length);
+            },
+            createEnemyByType: createEnemyByType,
+            createBossByLevel: createBossByLevel,
+            addActiveEnemy: function (enemy) {
+                activeEnemies.push(enemy);
+            },
+            onFinalVictory: function () {
+                saveFinalScore();
+                congratulations = true;
+            },
+            initialState: {
+                currentLevel: currentLevel,
+                currentPhase: currentPhase,
+                currentStageType: currentStageType,
+                stageState: stageState,
+                stageMessage: stageMessage,
+                stageTransitionUntil: stageTransitionUntil
+            }
+        }) : null;
+
+        if (!stageManager) {
+            throw new Error('FlubberStageManager module is required to manage stages');
+        }
+
+        syncStageStateFromManager();
+
         damageSystem = window.FlubberDamageSystem ? window.FlubberDamageSystem.create({
             getNow: function () {
                 return new Date().getTime();
@@ -673,17 +741,28 @@ var game = (function () {
     }
 
     function applyDebugStartConfig() {
-        if (!debugStartConfig || !debugStartConfig.enabled) {
-            currentLevel = 1;
-            currentPhase = 1;
-            currentStageType = 'normal';
-            debugHitboxes = false;
+        if (!stageManager) {
+            if (!debugStartConfig || !debugStartConfig.enabled) {
+                currentLevel = 1;
+                currentPhase = 1;
+                currentStageType = 'normal';
+                debugHitboxes = false;
+                return;
+            }
+
+            currentLevel = Math.min(totalLevels, Math.max(1, parseInt(debugStartConfig.level, 10) || 1));
+            currentPhase = Math.min(phasesPerLevel, Math.max(1, parseInt(debugStartConfig.phase, 10) || 1));
+            currentStageType = debugStartConfig.stageType === 'boss' ? 'boss' : 'normal';
+            debugHitboxes = !!debugStartConfig.hitboxes;
             return;
         }
 
-        currentLevel = Math.min(totalLevels, Math.max(1, parseInt(debugStartConfig.level, 10) || 1));
-        currentPhase = Math.min(phasesPerLevel, Math.max(1, parseInt(debugStartConfig.phase, 10) || 1));
-        currentStageType = debugStartConfig.stageType === 'boss' ? 'boss' : 'normal';
+        stageManager.applyDebugStartConfig(debugStartConfig);
+        syncStageStateFromManager();
+        if (!debugStartConfig || !debugStartConfig.enabled) {
+            debugHitboxes = false;
+            return;
+        }
         debugHitboxes = !!debugStartConfig.hitboxes;
     }
 
@@ -924,9 +1003,8 @@ var game = (function () {
     function openRewardSelector() {
         rewardChoices = generateRewardChoices();
         rewardSelectedIndex = 0;
-        stageState = 'reward_pending';
-        stageMessage = 'Elige una recompensa';
-        stageTransitionUntil = 0;
+        stageManager.setRewardPending('Elige una recompensa');
+        syncStageStateFromManager();
     }
 
     function applyReward(reward) {
@@ -1105,102 +1183,11 @@ var game = (function () {
     }
 
     function getCurrentStageConfig() {
-        var isBossStage = currentStageType === 'boss';
-        var enemyCount = getEnemyCountForPhase(currentLevel, currentPhase);
-        var baseEnemyLife = 2 + (currentLevel - 1) + Math.floor((currentPhase - 1) / 2);
-        var baseEnemyShots = 3 + currentLevel + Math.floor((currentPhase - 1) / 2);
-        var baseEnemySpeed = defaultEnemySpeed + ((currentLevel - 1) * 0.22) + ((currentPhase - 1) * 0.05);
-
-        var enemyTypePool = getEnemyTypePool(currentLevel, currentPhase);
-        var maxConcurrent = getMaxConcurrentForStage(currentLevel, currentPhase);
-        var spawnDelay = getSpawnDelayForLevel(currentLevel);
-
-        return {
-            type: currentStageType,
-            enemyCount: isBossStage ? 1 : enemyCount,
-            enemyLife: baseEnemyLife,
-            enemyShots: baseEnemyShots,
-            enemySpeed: baseEnemySpeed,
-            enemyPoints: 4 + currentLevel + currentPhase + Math.floor((currentPhase - 1) / 2),
-            enemyTypePool: enemyTypePool,
-            maxConcurrent: isBossStage ? 1 : maxConcurrent,
-            spawnDelayMin: isBossStage ? 0 : spawnDelay.min,
-            spawnDelayMax: isBossStage ? 0 : spawnDelay.max,
-            bossLife: 10 + (currentLevel * 4),
-            bossShots: 20 + (currentLevel * 8),
-            bossSpeed: 0.8 + (currentLevel * 0.1),
-            bossPoints: 40 + (currentLevel * 10)
-        };
-    }
-
-    function getEnemyCountForPhase(level, phase) {
-        if (level === 1) {
-            return phase + 1;
-        }
-        if (level === 2) {
-            return phase + 11;
-        }
-        return phase + 11;
-    }
-
-    function getEnemyTypePool(level, phase) {
-        if (level === 1) {
-            if (phase <= 3) {
-                return [1];
-            }
-            if (phase <= 7) {
-                return [1, 2];
-            }
-            return [1, 2, 3];
-        }
-
-        if (phase <= 2) {
-            return [2, 3];
-        }
-        if (phase <= 4) {
-            return [2, 3, 4];
-        }
-        if (phase <= 7) {
-            return [2, 3, 4, 5];
-        }
-        return [1, 2, 3, 4, 5];
-    }
-
-    function getMaxConcurrentForStage(level, phase) {
-        if (level === 1) {
-            if (phase <= 3) {
-                return 3;
-            }
-            if (phase <= 7) {
-                return 4;
-            }
-            return 5;
-        }
-
-        if (phase <= 3) {
-            return 5;
-        }
-        if (phase <= 7) {
-            return 6;
-        }
-        return 7;
-    }
-
-    function getSpawnDelayForLevel(level) {
-        if (level === 1) {
-            return { min: 1200, max: 1800 };
-        }
-        return { min: 900, max: 1400 };
+        return stageManager.getCurrentStageConfig();
     }
 
     function shouldOpenRewardSelector() {
-        if (currentStageType === 'boss') {
-            if (currentLevel === totalLevels) {
-                return false;
-            }
-            return true;
-        }
-        return currentStageType === 'normal' && currentPhase % 2 === 0;
+        return stageManager.shouldOpenRewardSelector();
     }
 
     function getAliveEnemiesCount() {
@@ -1214,94 +1201,43 @@ var game = (function () {
     }
 
     function clearStageEntities() {
-        clearStageSpawnScheduler();
-        for (var i = 0; i < activeEnemies.length; i++) {
-            if (activeEnemies[i] && activeEnemies[i].stopShooting) {
-                activeEnemies[i].stopShooting();
-            }
-        }
-        activeEnemies.splice(0, activeEnemies.length);
-        evilShotsBuffer.splice(0, evilShotsBuffer.length);
-        playerShotsBuffer.splice(0, playerShotsBuffer.length);
-        pendingStageSpawns = 0;
-        spawnedStageEnemies = 0;
+        stageManager.clearStageEntities();
+        syncStageStateFromManager();
     }
 
     function clearStageSpawnScheduler() {
-        if (stageSpawnTimeout) {
-            clearTimeout(stageSpawnTimeout);
-            stageSpawnTimeout = null;
-        }
+        stageManager.clearStageSpawnScheduler();
+        syncStageStateFromManager();
     }
 
     function startSummary(message) {
-        stageState = 'summary';
-        stageMessage = message;
-        stageTransitionUntil = new Date().getTime() + stageSummaryDuration;
-        clearStageEntities();
+        stageManager.startSummary(message);
+        syncStageStateFromManager();
     }
 
     function startCountdown(message) {
-        stageState = 'countdown';
-        stageMessage = message;
-        stageTransitionUntil = new Date().getTime() + stageCountdownDuration;
-        clearStageEntities();
+        stageManager.startCountdown(message);
+        syncStageStateFromManager();
     }
 
     function startCurrentStage() {
-        activeStageConfig = getCurrentStageConfig();
-        stageState = 'playing';
-        stageMessage = '';
-        spawnStageEnemies(activeStageConfig);
+        stageManager.startCurrentStage();
+        syncStageStateFromManager();
     }
 
     function spawnStageEnemies(stageConfig) {
-        clearStageSpawnScheduler();
-        pendingStageSpawns = stageConfig.enemyCount;
-        spawnedStageEnemies = 0;
-
-        if (stageConfig.type === 'boss') {
-            var bossEnemy = createBossByLevel(stageConfig);
-            activeEnemies.push(bossEnemy);
-            pendingStageSpawns = 0;
-            spawnedStageEnemies = 1;
-            return;
-        }
-
-        spawnNextEnemyWave(stageConfig);
+        stageManager.spawnStageEnemies(stageConfig);
+        syncStageStateFromManager();
     }
 
     function spawnNextEnemyWave(stageConfig) {
-        if (stageState !== 'playing' || pendingStageSpawns <= 0) {
-            clearStageSpawnScheduler();
-            return;
-        }
-
-        if (getAliveEnemiesCount() >= stageConfig.maxConcurrent) {
-            scheduleNextEnemyWave(stageConfig, 250);
-            return;
-        }
-
-        var enemy = createEnemyByType(stageConfig);
-        activeEnemies.push(enemy);
-        pendingStageSpawns--;
-        spawnedStageEnemies++;
-
-        if (pendingStageSpawns > 0) {
-            scheduleNextEnemyWave(stageConfig);
-        } else {
-            clearStageSpawnScheduler();
-        }
+        stageManager.spawnNextEnemyWave(stageConfig);
+        syncStageStateFromManager();
     }
 
     function scheduleNextEnemyWave(stageConfig, forceDelay) {
-        clearStageSpawnScheduler();
-        var delay = typeof forceDelay === 'number' ? forceDelay :
-            getRandomInRange(stageConfig.spawnDelayMin, stageConfig.spawnDelayMax);
-        stageSpawnTimeout = setTimeout(function() {
-            stageSpawnTimeout = null;
-            spawnNextEnemyWave(stageConfig);
-        }, delay);
+        stageManager.scheduleNextEnemyWave(stageConfig, forceDelay);
+        syncStageStateFromManager();
     }
 
     function createEnemyByType(stageConfig) {
@@ -1315,14 +1251,15 @@ var game = (function () {
         return enemy;
     }
 
-    function createBossByLevel(stageConfig) {
-        var bossConfig = bossByLevel[currentLevel] || bossByLevel[1];
+    function createBossByLevel(stageConfig, levelOverride) {
+        var bossLevel = typeof levelOverride === 'number' ? levelOverride : currentLevel;
+        var bossConfig = bossByLevel[bossLevel] || bossByLevel[1];
         var boss = enemyEntityFactory.createFinalBoss(
             stageConfig.bossLife + bossConfig.lifeBonus,
             stageConfig.bossShots + bossConfig.shotsBonus,
             stageConfig.bossSpeed + bossConfig.speedBonus,
             bossConfig.spriteIndex,
-            currentLevel,
+            bossLevel,
             bossImages
         );
         boss.pointsToKill = stageConfig.bossPoints + bossConfig.pointsBonus;
@@ -1330,15 +1267,7 @@ var game = (function () {
     }
 
     function isStageCleared() {
-        if (pendingStageSpawns > 0 || stageSpawnTimeout) {
-            return false;
-        }
-        for (var i = 0; i < activeEnemies.length; i++) {
-            if (!activeEnemies[i].dead) {
-                return false;
-            }
-        }
-        return spawnedStageEnemies > 0;
+        return stageManager.isStageCleared();
     }
 
     function handleStageCleared() {
@@ -1351,28 +1280,8 @@ var game = (function () {
     }
 
     function completeStageClear() {
-        if (currentStageType === 'boss') {
-            if (currentLevel === totalLevels) {
-                saveFinalScore();
-                congratulations = true;
-                clearStageEntities();
-                return;
-            }
-            currentLevel++;
-            currentPhase = 1;
-            currentStageType = 'normal';
-            startSummary('Nivel completado. Preparando Nivel ' + currentLevel);
-            return;
-        }
-
-        if (currentPhase === phasesPerLevel) {
-            currentStageType = 'boss';
-            startSummary('Fase ' + phasesPerLevel + ' completada. Se acerca el jefe');
-            return;
-        }
-
-        currentPhase++;
-        startSummary('Fase completada. Preparando Fase ' + currentPhase);
+        stageManager.completeStageClear();
+        syncStageStateFromManager();
     }
 
     function drawTransitionOverlay() {
@@ -1692,6 +1601,8 @@ var game = (function () {
 
     function update() {
 
+        syncStageStateFromManager();
+
         if (damageSystem) {
             damageSystem.update(new Date().getTime());
         }
@@ -1723,13 +1634,8 @@ var game = (function () {
         if (stageState !== 'playing') {
             drawTransitionOverlay();
             showLifeAndScore();
-            if (new Date().getTime() >= stageTransitionUntil) {
-                if (stageState === 'summary') {
-                    startCountdown('Preparate para la siguiente etapa');
-                } else if (stageState === 'countdown') {
-                    startCurrentStage();
-                }
-            }
+            stageManager.processTransitionTick(new Date().getTime());
+            syncStageStateFromManager();
             return;
         }
 
