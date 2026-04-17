@@ -233,7 +233,7 @@ window.FlubberStageManager = (function () {
 
             if (state.currentPhase === phasesPerLevel) {
                 state.currentStageType = 'boss';
-                startSummary('Fase ' + phasesPerLevel + ' completada. Se acerca el jefe');
+                startSummary('Fase ' + phasesPerLevel + ' completada. Ahi viene el jefe');
                 return;
             }
 
@@ -262,7 +262,11 @@ window.FlubberStageManager = (function () {
 
         function processTransitionTick(now) {
             if (state.stageState === 'summary' && now >= state.stageTransitionUntil) {
-                startCountdown('Preparate para la siguiente etapa');
+                if (state.currentStageType === 'boss') {
+                    startCountdown('Ahi viene el jefe');
+                } else {
+                    startCountdown('Preparate para la siguiente etapa');
+                }
                 return true;
             }
 

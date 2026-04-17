@@ -1337,6 +1337,18 @@ var game = (function () {
         syncStageStateFromManager();
     }
 
+    function isBossWarningMessage() {
+        if (currentStageType !== 'boss' || !stageMessage) {
+            return false;
+        }
+        return stageMessage.toLowerCase().indexOf('ahi viene el jefe') !== -1;
+    }
+
+    function getBossWarningZoomScale() {
+        var pulse = Math.sin(new Date().getTime() / 180);
+        return 1 + (pulse * 0.12);
+    }
+
     function drawTransitionOverlay() {
         var centerX = canvas.width / 2;
         var centerY = canvas.height / 2;
@@ -1358,15 +1370,33 @@ var game = (function () {
             outlineWidth: 3
         });
 
-        drawArcadeText(stageMessage.toUpperCase(), centerX, overlayY + 86, {
-            color: arcadeTheme.primaryText,
-            font: "bold 20px 'Courier New', monospace",
-            align: 'center',
-            glowColor: accentColor,
-            glowBlur: 8,
-            outlineColor: arcadeTheme.outline,
-            outlineWidth: 3
-        });
+        var messageY = overlayY + 86;
+        if (isBossWarningMessage()) {
+            var zoomScale = getBossWarningZoomScale();
+            bufferctx.save();
+            bufferctx.translate(centerX, messageY);
+            bufferctx.scale(zoomScale, zoomScale);
+            drawArcadeText(stageMessage.toUpperCase(), 0, 0, {
+                color: '#fff3a3',
+                font: "bold 22px 'Courier New', monospace",
+                align: 'center',
+                glowColor: arcadeTheme.accentBoss,
+                glowBlur: 11,
+                outlineColor: arcadeTheme.outline,
+                outlineWidth: 3
+            });
+            bufferctx.restore();
+        } else {
+            drawArcadeText(stageMessage.toUpperCase(), centerX, messageY, {
+                color: arcadeTheme.primaryText,
+                font: "bold 20px 'Courier New', monospace",
+                align: 'center',
+                glowColor: accentColor,
+                glowBlur: 8,
+                outlineColor: arcadeTheme.outline,
+                outlineWidth: 3
+            });
+        }
 
         if (stageState === 'countdown') {
             var millisLeft = stageTransitionUntil - new Date().getTime();
