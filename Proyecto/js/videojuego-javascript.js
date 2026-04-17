@@ -38,6 +38,7 @@ var game = (function () {
     var damageSystem = null;
     var shotEntities = null;
     var playerEntityFactory = null;
+    var enemyEntityFactory = null;
 
     // Variables globales a la aplicacion
     var canvas,
@@ -503,6 +504,35 @@ var game = (function () {
                 if (damageSystem) {
                     damageSystem.killPlayer();
                 }
+            }
+        }) : null;
+
+        enemyEntityFactory = window.FlubberEnemyEntity ? window.FlubberEnemyEntity.create({
+            getCanvasWidth: function () {
+                return canvas.width;
+            },
+            getCanvasHeight: function () {
+                return canvas.height;
+            },
+            getRandomNumber: getRandomNumber,
+            getImageDimension: getImageDimension,
+            getMinHorizontalOffset: function () {
+                return minHorizontalOffset;
+            },
+            getMaxHorizontalOffset: function () {
+                return maxHorizontalOffset;
+            },
+            getDefaultEnemySpeed: function () {
+                return defaultEnemySpeed;
+            },
+            getStageState: function () {
+                return stageState;
+            },
+            getPlayer: function () {
+                return player;
+            },
+            createEvilShot: function (x, y) {
+                return shotEntities ? shotEntities.createEvilShot(x, y) : new EvilShot(x, y);
             }
         }) : null;
 
@@ -1276,20 +1306,31 @@ var game = (function () {
         var life = stageConfig.enemyLife + enemyType.lifeBonus;
         var shots = stageConfig.enemyShots + enemyType.shotsBonus;
         var speed = stageConfig.enemySpeed + enemyType.speedBonus;
-        var enemy = new Evil(life, shots, speed, enemyType.spriteIndex, selectedType);
+        var enemy = enemyEntityFactory ?
+            enemyEntityFactory.createEvil(life, shots, speed, enemyType.spriteIndex, selectedType, evilImages) :
+            new Evil(life, shots, speed, enemyType.spriteIndex, selectedType);
         enemy.pointsToKill = stageConfig.enemyPoints + enemyType.pointsBonus;
         return enemy;
     }
 
     function createBossByLevel(stageConfig) {
         var bossConfig = bossByLevel[currentLevel] || bossByLevel[1];
-        var boss = new FinalBoss(
-            stageConfig.bossLife + bossConfig.lifeBonus,
-            stageConfig.bossShots + bossConfig.shotsBonus,
-            stageConfig.bossSpeed + bossConfig.speedBonus,
-            bossConfig.spriteIndex,
-            currentLevel
-        );
+        var boss = enemyEntityFactory ?
+            enemyEntityFactory.createFinalBoss(
+                stageConfig.bossLife + bossConfig.lifeBonus,
+                stageConfig.bossShots + bossConfig.shotsBonus,
+                stageConfig.bossSpeed + bossConfig.speedBonus,
+                bossConfig.spriteIndex,
+                currentLevel,
+                bossImages
+            ) :
+            new FinalBoss(
+                stageConfig.bossLife + bossConfig.lifeBonus,
+                stageConfig.bossShots + bossConfig.shotsBonus,
+                stageConfig.bossSpeed + bossConfig.speedBonus,
+                bossConfig.spriteIndex,
+                currentLevel
+            );
         boss.pointsToKill = stageConfig.bossPoints + bossConfig.pointsBonus;
         return boss;
     }
@@ -1936,6 +1977,9 @@ var game = (function () {
     }
 
     function Evil (vidas, disparos, velocidad, spriteIndex, enemyType) {
+        if (enemyEntityFactory) {
+            return enemyEntityFactory.createEvil(vidas, disparos, velocidad, spriteIndex, enemyType, evilImages);
+        }
         Object.getPrototypeOf(Evil.prototype).constructor.call(this, vidas, disparos, evilImages, spriteIndex);
         this.speed = velocidad;
         this.goDownSpeed = velocidad;
@@ -2007,6 +2051,9 @@ var game = (function () {
     Evil.prototype.constructor = Evil;
 
     function FinalBoss (vidas, disparos, velocidad, spriteIndex, bossLevel) {
+        if (enemyEntityFactory) {
+            return enemyEntityFactory.createFinalBoss(vidas, disparos, velocidad, spriteIndex, bossLevel, bossImages);
+        }
         Object.getPrototypeOf(FinalBoss.prototype).constructor.call(this, vidas, disparos, bossImages, spriteIndex);
         this.speed = velocidad;
         this.goDownSpeed = velocidad / 2;
