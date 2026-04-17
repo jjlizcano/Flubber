@@ -52,42 +52,47 @@ window.FlubberShotRuntime = (function () {
             evilShot.identifier = id;
 
             var player = options.getPlayer();
-            var isHittingPlayer = !player.dead && options.circleRectOverlap(options.getPlayerHitCircle(), options.getEnemyShotBounds(evilShot));
+            var isHittingPlayer = false;
+            if (player && !player.dead) {
+                if (typeof evilShot.isHittingPlayer === 'function') {
+                    isHittingPlayer = evilShot.isHittingPlayer();
+                } else {
+                    isHittingPlayer = options.circleRectOverlap(options.getPlayerHitCircle(), options.getEnemyShotBounds(evilShot));
+                }
+            }
             if (isHittingPlayer) {
                 evilShot.deleteShot(parseInt(evilShot.identifier, 10));
                 options.handlePlayerDamage('projectile');
                 return;
             }
 
-            if (player.dead || !options.circleRectOverlap(options.getPlayerHitCircle(), options.getEnemyShotBounds(evilShot))) {
-                var vx = typeof evilShot.vx === 'number' ? evilShot.vx : 0;
-                var vy = typeof evilShot.vy === 'number' ? evilShot.vy : evilShot.speed;
-                if (evilShot.waveMotion) {
-                    evilShot.waveBaseX = (typeof evilShot.waveBaseX === 'number' ? evilShot.waveBaseX : evilShot.posX) + vx;
-                    evilShot.wavePhase = (evilShot.wavePhase || 0) + (evilShot.waveFrequency || 0.5);
-                    evilShot.posX = evilShot.waveBaseX + Math.sin(evilShot.wavePhase) * (evilShot.waveAmplitude || 8);
-                } else {
-                    evilShot.posX += vx;
-                }
-                evilShot.posY += vy;
-                if (evilShot.posY <= options.getCanvasHeight() && evilShot.posX >= -40 && evilShot.posX <= (options.getCanvasWidth() + 40)) {
-                    options.getBufferContext().drawImage(evilShot.image, evilShot.posX, evilShot.posY);
-                } else {
-                    evilShot.deleteShot(parseInt(evilShot.identifier, 10));
-                }
+            var vx = typeof evilShot.vx === 'number' ? evilShot.vx : 0;
+            var vy = typeof evilShot.vy === 'number' ? evilShot.vy : evilShot.speed;
+            if (evilShot.waveMotion) {
+                evilShot.waveBaseX = (typeof evilShot.waveBaseX === 'number' ? evilShot.waveBaseX : evilShot.posX) + vx;
+                evilShot.wavePhase = (evilShot.wavePhase || 0) + (evilShot.waveFrequency || 0.5);
+                evilShot.posX = evilShot.waveBaseX + Math.sin(evilShot.wavePhase) * (evilShot.waveAmplitude || 8);
+            } else {
+                evilShot.posX += vx;
+            }
+            evilShot.posY += vy;
+            if (evilShot.posY <= options.getCanvasHeight() && evilShot.posX >= -40 && evilShot.posX <= (options.getCanvasWidth() + 40)) {
+                options.getBufferContext().drawImage(evilShot.image, evilShot.posX, evilShot.posY);
+            } else {
+                evilShot.deleteShot(parseInt(evilShot.identifier, 10));
             }
         }
 
         function updatePlayerShots() {
             var playerShotsBuffer = options.getPlayerShotsBuffer();
-            for (var i = 0; i < playerShotsBuffer.length; i++) {
+            for (var i = playerShotsBuffer.length - 1; i >= 0; i--) {
                 updatePlayerShot(playerShotsBuffer[i], i);
             }
         }
 
         function updateEnemyShots() {
             var evilShotsBuffer = options.getEvilShotsBuffer();
-            for (var i = 0; i < evilShotsBuffer.length; i++) {
+            for (var i = evilShotsBuffer.length - 1; i >= 0; i--) {
                 updateEnemyShot(evilShotsBuffer[i], i);
             }
         }

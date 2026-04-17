@@ -101,7 +101,8 @@ var game = (function () {
         assetsReady = false,
         assetsLoaded = 0,
         assetsTotal = 0,
-        debugHitboxes = false;
+        debugHitboxes = false,
+        playerDamageAppliedThisFrame = false;
 
     var arcadeTheme = gameConfig.arcadeTheme || {
         panelBg: 'rgba(25, 8, 32, 0.7)',
@@ -500,7 +501,7 @@ var game = (function () {
             circleRectOverlap: circleRectOverlap,
             getPlayerHitCircle: getPlayerHitCircle,
             getEnemyShotBounds: getEnemyShotBounds,
-            handlePlayerDamage: handlePlayerDamage
+            handlePlayerDamage: handlePlayerDamageOncePerFrame
         }) : null;
 
         if (!shotRuntime) {
@@ -1409,7 +1410,7 @@ var game = (function () {
                     return 'keep';
                 }
 
-                shot.deleteShot(parseInt(shot.identifier));
+                shot.deleteShot(parseInt(shot.identifier, 10));
                 return false;
             }
         }
@@ -1545,6 +1546,8 @@ var game = (function () {
 
     function update() {
 
+        playerDamageAppliedThisFrame = false;
+
         syncStageStateFromManager();
 
         if (damageSystem) {
@@ -1586,7 +1589,7 @@ var game = (function () {
         bufferctx.drawImage(player.dead ? playerKilledImage : player, player.posX, player.posY);
         for (var e = 0; e < activeEnemies.length; e++) {
             var enemy = activeEnemies[e];
-            if (enemy) {
+            if (enemy && !enemy.dead) {
                 bufferctx.drawImage(enemy.image, Math.round(enemy.posX), Math.round(enemy.posY));
             }
         }
@@ -1596,7 +1599,7 @@ var game = (function () {
         shotRuntime.updatePlayerShots();
 
         if (!player.dead && isAnyEnemyHittingPlayer()) {
-            handlePlayerDamage('contact');
+            handlePlayerDamageOncePerFrame('contact');
         }
 
         shotRuntime.updateEnemyShots();
@@ -1621,13 +1624,17 @@ var game = (function () {
     }
 
     function updateEnemies() {
-        for (var i = 0; i < activeEnemies.length; i++) {
+        for (var i = activeEnemies.length - 1; i >= 0; i--) {
             var enemy = activeEnemies[i];
-            if (!enemy.dead) {
-                enemy.update();
-                if (enemy.isOutOfScreen()) {
-                    enemy.kill();
-                }
+            if (!enemy || enemy.dead) {
+                arrayRemove(activeEnemies, i);
+                continue;
+            }
+
+            enemy.update();
+            if (enemy.isOutOfScreen()) {
+                enemy.kill();
+                arrayRemove(activeEnemies, i);
             }
         }
     }
@@ -1692,6 +1699,15 @@ var game = (function () {
         if (damageSystem) {
             damageSystem.handleDamage(source);
         }
+    }
+
+    function handlePlayerDamageOncePerFrame(source) {
+        if (playerDamageAppliedThisFrame) {
+            return false;
+        }
+        playerDamageAppliedThisFrame = true;
+        handlePlayerDamage(source);
+        return true;
     }
 
     /******************************* MEJORES PUNTUACIONES (LOCALSTORAGE) *******************************/

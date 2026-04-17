@@ -10,6 +10,7 @@ window.FlubberGameConfig = {
     minHorizontalOffset: 100,
     maxHorizontalOffset: 400,
     totalBestScoresToShow: 5,
+    enemyHitboxProfile: 'balanced',
     arcadeTheme: {
         panelBg: 'rgba(25, 8, 32, 0.7)',
         panelStroke: 'rgba(255, 180, 0, 0.75)',
