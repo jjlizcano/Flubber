@@ -119,8 +119,9 @@ window.FlubberEnemyEntity = (function () {
                 }
             }
 
-            function updateHunterMovement(movementSpeed) {
+            function updateHunterMovement(movementSpeed, speedMultiplier) {
                 var nowTime = new Date().getTime();
+                var appliedMultiplier = typeof speedMultiplier === 'number' ? speedMultiplier : 1;
                 if (enemy.hunterState === 'enter') {
                     enemy.posY += Math.max(0.9, movementSpeed);
                     if (enemy.posY >= enemy.hunterEntryTargetY) {
@@ -166,7 +167,7 @@ window.FlubberEnemyEntity = (function () {
                         enemy,
                         enemy.hunterDashTargetX,
                         enemy.hunterDashTargetY,
-                        Math.max(4.2, enemy.hunterDashSpeed)
+                        Math.max(4.2 * appliedMultiplier, enemy.hunterDashSpeed * appliedMultiplier)
                     );
                     if (reachedTarget) {
                         enemy.hunterState = 'return';
@@ -179,7 +180,7 @@ window.FlubberEnemyEntity = (function () {
                         enemy,
                         enemy.hunterDashStartX,
                         enemy.hunterDashStartY,
-                        Math.max(2.6, enemy.hunterReturnSpeed)
+                        Math.max(2.6 * appliedMultiplier, enemy.hunterReturnSpeed * appliedMultiplier)
                     );
                     if (returnedToOrigin) {
                         enemy.hunterState = 'zigzag';
@@ -192,8 +193,8 @@ window.FlubberEnemyEntity = (function () {
                 }
 
                 if (enemy.hunterState === 'zigzag') {
-                    var horizontalSpeed = enemy.zigzagHorizontalSpeed || Math.max(1.4, movementSpeed * 1.15);
-                    var verticalSpeed = enemy.zigzagVerticalSpeed || Math.max(0.55, movementSpeed * 0.7);
+                    var horizontalSpeed = (enemy.zigzagHorizontalSpeed || Math.max(1.4, movementSpeed * 1.15)) * appliedMultiplier;
+                    var verticalSpeed = (enemy.zigzagVerticalSpeed || Math.max(0.55, movementSpeed * 0.7)) * appliedMultiplier;
                     enemy.posY += verticalSpeed;
                     enemy.posX += (horizontalSpeed * enemy.zigzagDirection);
 
@@ -220,10 +221,11 @@ window.FlubberEnemyEntity = (function () {
                 }
             }
 
-            function updateStrikeMovement(movementSpeed) {
+            function updateStrikeMovement(movementSpeed, speedMultiplier) {
                 var nowTime = new Date().getTime();
-                var horizontalSpeed = enemy.strikeHorizontalSpeed || Math.max(1.4, movementSpeed * 1.35);
-                var verticalSpeed = enemy.strikeVerticalSpeed || Math.max(0.7, movementSpeed * 0.95);
+                var appliedMultiplier = typeof speedMultiplier === 'number' ? speedMultiplier : 1;
+                var horizontalSpeed = (enemy.strikeHorizontalSpeed || Math.max(1.4, movementSpeed * 1.35)) * appliedMultiplier;
+                var verticalSpeed = (enemy.strikeVerticalSpeed || Math.max(0.7, movementSpeed * 0.95)) * appliedMultiplier;
 
                 var player = options.getPlayer();
                 var triggerY = player ? (player.posY - enemy.spriteHeight - 20) : canvasHeight;
@@ -289,10 +291,11 @@ window.FlubberEnemyEntity = (function () {
                 enemy.shots--;
             }
 
-            function updateSentinelMovement(movementSpeed) {
+            function updateSentinelMovement(movementSpeed, speedMultiplier) {
                 var nowTime = new Date().getTime();
-                var horizontalSpeed = enemy.sentinelHorizontalSpeed || Math.max(1.7, movementSpeed * 1.45);
-                var verticalSpeed = enemy.sentinelVerticalSpeed || Math.max(0.75, movementSpeed * 0.95);
+                var appliedMultiplier = typeof speedMultiplier === 'number' ? speedMultiplier : 1;
+                var horizontalSpeed = (enemy.sentinelHorizontalSpeed || Math.max(1.7, movementSpeed * 1.45)) * appliedMultiplier;
+                var verticalSpeed = (enemy.sentinelVerticalSpeed || Math.max(0.75, movementSpeed * 0.95)) * appliedMultiplier;
 
                 var player = options.getPlayer();
                 var triggerY = player ? (player.posY - enemy.spriteHeight - 20) : canvasHeight;
@@ -397,18 +400,20 @@ window.FlubberEnemyEntity = (function () {
 
             enemy.update = function () {
                 var movementSpeed = enemy.goDownSpeed;
+                var speedMultiplier = 1;
                 if (enemy.slowUntil && new Date().getTime() < enemy.slowUntil) {
-                    movementSpeed = movementSpeed * 0.6;
+                    speedMultiplier = 0.6;
+                    movementSpeed = movementSpeed * speedMultiplier;
                 }
                 if (enemy.hunterMotion) {
-                    updateHunterMovement(movementSpeed);
+                    updateHunterMovement(movementSpeed, speedMultiplier);
                 } else if (enemy.strikeMotion) {
-                    updateStrikeMovement(movementSpeed);
+                    updateStrikeMovement(movementSpeed, speedMultiplier);
                 } else if (enemy.sentinelMotion) {
-                    updateSentinelMovement(movementSpeed);
+                    updateSentinelMovement(movementSpeed, speedMultiplier);
                 } else if (enemy.zigzagMotion) {
-                    var horizontalSpeed = enemy.zigzagHorizontalSpeed || Math.max(1.6, movementSpeed * 1.35);
-                    var verticalSpeed = enemy.zigzagVerticalSpeed || Math.max(0.75, movementSpeed * 0.9);
+                    var horizontalSpeed = (enemy.zigzagHorizontalSpeed || Math.max(1.6, movementSpeed * 1.35)) * speedMultiplier;
+                    var verticalSpeed = (enemy.zigzagVerticalSpeed || Math.max(0.75, movementSpeed * 0.9)) * speedMultiplier;
                     enemy.posY += verticalSpeed;
                     enemy.posX += (horizontalSpeed * enemy.zigzagDirection);
 
@@ -420,9 +425,9 @@ window.FlubberEnemyEntity = (function () {
                         enemy.zigzagDirection = -1;
                     }
                 } else if (enemy.circularMotion) {
-                    var orbitSpeed = enemy.circularOrbitSpeed || Math.max(0.03, movementSpeed * 0.04);
+                    var orbitSpeed = (enemy.circularOrbitSpeed || Math.max(0.03, movementSpeed * 0.04)) * speedMultiplier;
                     enemy.circularAngle += orbitSpeed;
-                    enemy.circularCenterY += enemy.circularVerticalDrift || Math.max(0.25, movementSpeed * 0.35);
+                    enemy.circularCenterY += (enemy.circularVerticalDrift || Math.max(0.25, movementSpeed * 0.35)) * speedMultiplier;
 
                     enemy.posX = enemy.circularCenterX + Math.cos(enemy.circularAngle) * enemy.circularRadiusX - (enemy.spriteWidth / 2);
                     enemy.posY = enemy.circularCenterY + Math.sin(enemy.circularAngle) * enemy.circularRadiusY - (enemy.spriteHeight / 2);
