@@ -20,6 +20,7 @@ var game = (function () {
     var gameConfig = window.FlubberGameConfig || {};
     var collisionSystem = window.FlubberCollisionSystem || null;
     var damageSystem = null;
+    var shotEntities = null;
 
     // Variables globales a la aplicacion
     var canvas,
@@ -414,6 +415,28 @@ var game = (function () {
         loadDebugStartConfigFromUrl();
         applyDebugStartConfig();
         debugHitboxes = !!debugStartConfig.hitboxes;
+
+        shotEntities = window.FlubberShotEntities ? window.FlubberShotEntities.create({
+            arrayRemove: arrayRemove,
+            getPlayerShotsBuffer: function () {
+                return playerShotsBuffer;
+            },
+            getEvilShotsBuffer: function () {
+                return evilShotsBuffer;
+            },
+            getPlayerShotImage: function () {
+                return playerShotImage;
+            },
+            getEvilShotImage: function () {
+                return evilShotImage;
+            },
+            getShotSpeed: function () {
+                return shotSpeed;
+            },
+            circleRectOverlap: circleRectOverlap,
+            getPlayerHitCircle: getPlayerHitCircle,
+            getEnemyShotBounds: getEnemyShotBounds
+        }) : null;
 
         damageSystem = window.FlubberDamageSystem ? window.FlubberDamageSystem.create({
             getNow: function () {
@@ -1315,7 +1338,7 @@ var game = (function () {
 
         var shoot = function () {
             if (nextPlayerShot < now || now == 0) {
-                playerShot = new PlayerShot(player.posX + (player.width / 2) - 5 , player.posY);
+                playerShot = shotEntities ? shotEntities.createPlayerShot(player.posX + (player.width / 2) - 5, player.posY) : new PlayerShot(player.posX + (player.width / 2) - 5, player.posY);
                 playerShot.damage = playerShotDamage;
                 playerShot.scale = playerShotScale;
                 playerShot.remainingBounces = runUpgrades.bounceStacks;
@@ -1488,7 +1511,7 @@ var game = (function () {
             }
             var centerX = enemy.posX + (enemy.spriteWidth / 2) - 5;
             var baseY = enemy.posY + enemy.spriteHeight;
-            var shot = new EvilShot(centerX, baseY);
+            var shot = shotEntities ? shotEntities.createEvilShot(centerX, baseY) : new EvilShot(centerX, baseY);
             shot.vx = 0;
             shot.add();
             if (enemy.enemyType !== 3) {
@@ -1647,7 +1670,7 @@ var game = (function () {
 
             for (var shotIndex = 0; shotIndex < totalShots; shotIndex++) {
                 var angle = startAngle + (step * shotIndex);
-                var fanShot = new EvilShot(centerX, baseY);
+                var fanShot = shotEntities ? shotEntities.createEvilShot(centerX, baseY) : new EvilShot(centerX, baseY);
                 fanShot.vx = Math.sin(angle) * fanShot.speed * 0.45;
                 fanShot.vy = Math.max(1.8, Math.cos(angle) * fanShot.speed * 0.75);
                 fanShot.add();
@@ -1796,15 +1819,15 @@ var game = (function () {
                 var centerX = enemy.posX + (enemy.spriteWidth / 2) - 5;
                 var baseY = enemy.posY + enemy.spriteHeight;
                 if (enemy.enemyType === 2) {
-                    var leftShot = new EvilShot(centerX - 8, baseY);
+                    var leftShot = shotEntities ? shotEntities.createEvilShot(centerX - 8, baseY) : new EvilShot(centerX - 8, baseY);
                     leftShot.vx = -2.2;
                     leftShot.add();
 
-                    var rightShot = new EvilShot(centerX + 8, baseY);
+                    var rightShot = shotEntities ? shotEntities.createEvilShot(centerX + 8, baseY) : new EvilShot(centerX + 8, baseY);
                     rightShot.vx = 2.2;
                     rightShot.add();
                 } else if (enemy.enemyType === 4) {
-                    var zigzagShot = new EvilShot(centerX, baseY);
+                    var zigzagShot = shotEntities ? shotEntities.createEvilShot(centerX, baseY) : new EvilShot(centerX, baseY);
                     zigzagShot.vx = 0;
                     zigzagShot.waveMotion = true;
                     zigzagShot.waveBaseX = centerX;
@@ -1813,7 +1836,7 @@ var game = (function () {
                     zigzagShot.waveFrequency = 0.55;
                     zigzagShot.add();
                 } else {
-                    var disparo = new EvilShot(centerX, baseY);
+                    var disparo = shotEntities ? shotEntities.createEvilShot(centerX, baseY) : new EvilShot(centerX, baseY);
                     disparo.add();
                 }
                 enemy.shots --;
