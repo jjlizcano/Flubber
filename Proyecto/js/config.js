@@ -11,6 +11,22 @@ window.FlubberGameConfig = {
     maxHorizontalOffset: 400,
     totalBestScoresToShow: 5,
     enemyHitboxProfile: 'balanced',
+    scoreSystem: {
+        enemyTypeBase: {
+            1: 6,
+            2: 8,
+            3: 10,
+            4: 12,
+            5: 14
+        },
+        bossBase: 24,
+        phaseMultiplierByGlobalPhase: [
+            1.00, 1.00, 1.10, 1.10, 1.20,
+            1.20, 1.30, 1.30, 1.40, 1.40,
+            1.55, 1.55, 1.70, 1.70, 1.85,
+            1.85, 2.00, 2.00, 2.20, 2.20
+        ]
+    },
     arcadeTheme: {
         panelBg: 'rgba(25, 8, 32, 0.7)',
         panelStroke: 'rgba(255, 180, 0, 0.75)',

@@ -121,6 +121,10 @@ var game = (function () {
 
     var enemyTypeConfigs = gameConfig.enemyTypeConfigs || {};
 
+    var scoreSystem = gameConfig.scoreSystem || {};
+    var scoreStoragePrefix = 'flubber_v2_score::';
+    var scoreSchemaStorageKey = 'flubber_score_schema';
+
     var bossByLevel = gameConfig.bossByLevel || {};
 
     var rewardCatalog = gameConfig.rewardCatalog || {};
@@ -441,6 +445,7 @@ var game = (function () {
     }
 
     function init() {
+        migrateScoreRankingIfNeeded();
         showBestScores();
 
         canvas = document.getElementById('canvas');
@@ -1225,6 +1230,59 @@ var game = (function () {
         return stageManager.shouldOpenRewardSelector();
     }
 
+    function getGlobalPhaseIndex(level, phase) {
+        var safeLevel = Math.max(1, parseInt(level, 10) || 1);
+        var safePhase = Math.max(1, parseInt(phase, 10) || 1);
+        return ((safeLevel - 1) * phasesPerLevel) + safePhase;
+    }
+
+    function getEnemyTypeBaseScore(enemyType) {
+        var enemyTypeBase = scoreSystem.enemyTypeBase || {};
+        if (typeof enemyTypeBase[enemyType] === 'number') {
+            return enemyTypeBase[enemyType];
+        }
+        if (typeof enemyTypeBase[enemyType + ''] === 'number') {
+            return enemyTypeBase[enemyType + ''];
+        }
+        var fallbackByType = {
+            1: 6,
+            2: 8,
+            3: 10,
+            4: 12,
+            5: 14
+        };
+        return fallbackByType[enemyType] || fallbackByType[1];
+    }
+
+    function getBossBaseScore() {
+        if (typeof scoreSystem.bossBase === 'number') {
+            return scoreSystem.bossBase;
+        }
+        return 24;
+    }
+
+    function getPhaseScoreMultiplier(globalPhaseIndex) {
+        var multipliers = scoreSystem.phaseMultiplierByGlobalPhase || [];
+        if (!multipliers.length) {
+            return 1;
+        }
+        var safeIndex = Math.max(1, parseInt(globalPhaseIndex, 10) || 1);
+        var listIndex = Math.min(multipliers.length, safeIndex) - 1;
+        var multiplier = multipliers[listIndex];
+        return typeof multiplier === 'number' ? multiplier : 1;
+    }
+
+    function getScoreToAward(enemy) {
+        if (!enemy) {
+            return 0;
+        }
+        var baseScore = typeof enemy.scoreBase === 'number' ? enemy.scoreBase : (enemy.pointsToKill || 0);
+        var phaseIndex = typeof enemy.scorePhaseIndex === 'number' ? enemy.scorePhaseIndex : getGlobalPhaseIndex(currentLevel, currentPhase);
+        var phaseMultiplier = getPhaseScoreMultiplier(phaseIndex);
+        var upgradeMultiplier = playerScoreMultiplier || 1;
+        return Math.max(1, Math.round(baseScore * phaseMultiplier * upgradeMultiplier));
+    }
+
     function getAliveEnemiesCount() {
         var aliveEnemies = 0;
         for (var i = 0; i < activeEnemies.length; i++) {
@@ -1247,7 +1305,9 @@ var game = (function () {
         var shots = stageConfig.enemyShots + enemyType.shotsBonus;
         var speed = stageConfig.enemySpeed + enemyType.speedBonus;
         var enemy = enemyEntityFactory.createEvil(life, shots, speed, enemyType.spriteIndex, selectedType, evilImages);
-        enemy.pointsToKill = stageConfig.enemyPoints + enemyType.pointsBonus;
+        enemy.scoreBase = getEnemyTypeBaseScore(selectedType);
+        enemy.scorePhaseIndex = getGlobalPhaseIndex(currentLevel, currentPhase);
+        enemy.pointsToKill = enemy.scoreBase;
         return enemy;
     }
 
@@ -1262,7 +1322,9 @@ var game = (function () {
             bossLevel,
             bossImages
         );
-        boss.pointsToKill = stageConfig.bossPoints + bossConfig.pointsBonus;
+        boss.scoreBase = getBossBaseScore();
+        boss.scorePhaseIndex = getGlobalPhaseIndex(currentLevel, currentPhase);
+        boss.pointsToKill = boss.scoreBase;
         return boss;
     }
 
@@ -1397,7 +1459,7 @@ var game = (function () {
                 }
                 if (enemy.life <= 0) {
                     enemy.kill();
-                    player.score += Math.round(enemy.pointsToKill * playerScoreMultiplier);
+                    player.score += getScoreToAward(enemy);
                 }
 
                 if ((shot.remainingBounces || 0) > 0) {
@@ -1712,9 +1774,48 @@ var game = (function () {
 
     /******************************* MEJORES PUNTUACIONES (LOCALSTORAGE) *******************************/
     function saveFinalScore() {
-        localStorage.setItem(getFinalScoreDate(), getTotalScore());
+        localStorage.setItem(scoreStoragePrefix + getFinalScoreDate(), getTotalScore());
         showBestScores();
         removeNoBestScores();
+    }
+
+    function isLegacyScoreKey(key) {
+        return /^\d{2}\/\d{2}\/\d{4}\s\d{2}:\d{2}:\d{2}$/.test(key || '');
+    }
+
+    function isV2ScoreKey(key) {
+        return typeof key === 'string' && key.indexOf(scoreStoragePrefix) === 0;
+    }
+
+    function getScoreLabelFromKey(key) {
+        if (isV2ScoreKey(key)) {
+            return key.substring(scoreStoragePrefix.length);
+        }
+        return key;
+    }
+
+    function migrateScoreRankingIfNeeded() {
+        if (!window.localStorage) {
+            return;
+        }
+
+        if (localStorage.getItem(scoreSchemaStorageKey) === 'v2') {
+            return;
+        }
+
+        var keysToRemove = [];
+        for (var i = 0; i < localStorage.length; i++) {
+            var key = localStorage.key(i);
+            if (isLegacyScoreKey(key) || isV2ScoreKey(key)) {
+                keysToRemove.push(key);
+            }
+        }
+
+        for (var j = 0; j < keysToRemove.length; j++) {
+            localStorage.removeItem(keysToRemove[j]);
+        }
+
+        localStorage.setItem(scoreSchemaStorageKey, 'v2');
     }
 
     function getFinalScoreDate() {
@@ -1735,26 +1836,39 @@ var game = (function () {
     }
 
     function getBestScoreKeys() {
-        var bestScores = getAllScores();
-        bestScores.sort(function (a, b) {return b - a;});
-        bestScores = bestScores.slice(0, totalBestScoresToShow);
+        var allScoreEntries = getAllScoreEntries();
+        allScoreEntries.sort(function (a, b) { return b.score - a.score; });
+        allScoreEntries = allScoreEntries.slice(0, totalBestScoresToShow);
         var bestScoreKeys = [];
-        for (var j = 0; j < bestScores.length; j++) {
-            var score = bestScores[j];
-            for (var i = 0; i < localStorage.length; i++) {
-                var key = localStorage.key(i);
-                if (parseInt(localStorage.getItem(key)) == score) {
-                    bestScoreKeys.push(key);
-                }
-            }
+        for (var j = 0; j < allScoreEntries.length; j++) {
+            bestScoreKeys.push(allScoreEntries[j].key);
         }
         return bestScoreKeys.slice(0, totalBestScoresToShow);
     }
 
+    function getAllScoreEntries() {
+        var allEntries = [];
+        for (var i = 0; i < localStorage.length; i++) {
+            var key = localStorage.key(i);
+            if (!isV2ScoreKey(key)) {
+                continue;
+            }
+            var scoreValue = parseInt(localStorage.getItem(key), 10);
+            if (!isNaN(scoreValue)) {
+                allEntries.push({
+                    key: key,
+                    score: scoreValue
+                });
+            }
+        }
+        return allEntries;
+    }
+
     function getAllScores() {
         var all = [];
-        for (var i=0; i < localStorage.length; i++) {
-            all[i] = (localStorage.getItem(localStorage.key(i)));
+        var entries = getAllScoreEntries();
+        for (var i = 0; i < entries.length; i++) {
+            all.push(entries[i].score);
         }
         return all;
     }
@@ -1765,7 +1879,7 @@ var game = (function () {
         if (bestScoresList) {
             clearList(bestScoresList);
             for (var i=0; i < bestScores.length; i++) {
-                addListElement(bestScoresList, bestScores[i], i==0?'negrita':null);
+                addListElement(bestScoresList, getScoreLabelFromKey(bestScores[i]), i==0?'negrita':null);
                 addListElement(bestScoresList, localStorage.getItem(bestScores[i]), i==0?'negrita':null);
             }
         }
@@ -1801,7 +1915,7 @@ var game = (function () {
         var bestScoreKeys = getBestScoreKeys();
         for (var i=0; i < localStorage.length; i++) {
             var key = localStorage.key(i);
-            if (!bestScoreKeys.containsElement(key)) {
+            if (isV2ScoreKey(key) && !bestScoreKeys.containsElement(key)) {
                 scoresToRemove.push(key);
             }
         }
