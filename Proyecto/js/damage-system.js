@@ -60,7 +60,6 @@ window.FlubberDamageSystem = (function () {
             if (player.life > 1) {
                 player.dead = true;
                 player.life -= 1;
-                clearActiveShots();
                 respawnAt = getNow() + 500;
                 return;
             }
