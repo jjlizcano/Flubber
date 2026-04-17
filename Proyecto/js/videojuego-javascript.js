@@ -19,6 +19,7 @@ var game = (function () {
 
     var gameConfig = window.FlubberGameConfig || {};
     var collisionSystem = window.FlubberCollisionSystem || null;
+    var damageSystem = null;
 
     // Variables globales a la aplicacion
     var canvas,
@@ -79,8 +80,7 @@ var game = (function () {
         assetsReady = false,
         assetsLoaded = 0,
         assetsTotal = 0,
-        debugHitboxes = false,
-        playerRespawnAt = 0;
+        debugHitboxes = false;
 
     var arcadeTheme = gameConfig.arcadeTheme || {
         panelBg: 'rgba(25, 8, 32, 0.7)',
@@ -225,19 +225,6 @@ var game = (function () {
         targetPlayer.height = targetPlayer.height || 66;
         targetPlayer.posX = (canvas.width / 2) - (targetPlayer.width / 2);
         targetPlayer.posY = canvas.height - targetPlayer.height - 10;
-    }
-
-    function revivePlayer(targetPlayer) {
-        if (!targetPlayer) {
-            return;
-        }
-        resetPlayerPosition(targetPlayer);
-        targetPlayer.dead = false;
-        targetPlayer.speed = playerSpeed;
-        targetPlayer.invulnerableUntil = new Date().getTime() + 350;
-        nextPlayerShot = 0;
-        now = 0;
-        playerRespawnAt = 0;
     }
 
     function getEnemyShotBounds(shot) {
@@ -428,6 +415,32 @@ var game = (function () {
         applyDebugStartConfig();
         debugHitboxes = !!debugStartConfig.hitboxes;
 
+        damageSystem = window.FlubberDamageSystem ? window.FlubberDamageSystem.create({
+            getNow: function () {
+                return new Date().getTime();
+            },
+            getRunUpgrades: function () {
+                return runUpgrades;
+            },
+            clearActiveShots: function () {
+                evilShotsBuffer.splice(0, evilShotsBuffer.length);
+                playerShotsBuffer.splice(0, playerShotsBuffer.length);
+            },
+            resetPlayerPosition: resetPlayerPosition,
+            getPlayerSpeed: function () {
+                return playerSpeed;
+            },
+            resetShotTimers: function () {
+                nextPlayerShot = 0;
+                now = 0;
+            },
+            clearStageEntities: clearStageEntities,
+            onGameOver: function () {
+                saveFinalScore();
+                youLoose = true;
+            }
+        }) : null;
+
         addListener(document, 'keydown', keyDown);
         addListener(document, 'keyup', keyUp);
 
@@ -441,6 +454,10 @@ var game = (function () {
             resetRunUpgrades();
             refreshPlayerStats();
             player = new Player(playerLife, 0);
+            if (damageSystem) {
+                damageSystem.bindPlayer(player);
+                damageSystem.reset();
+            }
             applyDebugRewardsForTest();
             assetsReady = true;
             startCountdown('Nivel ' + currentLevel + ' - Fase ' + currentPhase);
@@ -1325,21 +1342,8 @@ var game = (function () {
         };
 
         player.killPlayer = function() {
-            if (this.life > 1) {
-                this.dead = true;
-                this.life = this.life - 1;
-                evilShotsBuffer.splice(0, evilShotsBuffer.length);
-                playerShotsBuffer.splice(0, playerShotsBuffer.length);
-                playerRespawnAt = new Date().getTime() + 500;
-
-            } else {
-                this.dead = true;
-                playerRespawnAt = 0;
-                nextPlayerShot = 0;
-                now = 0;
-                saveFinalScore();
-                clearStageEntities();
-                youLoose = true;
+            if (damageSystem) {
+                damageSystem.killPlayer();
             }
         };
 
@@ -2093,8 +2097,8 @@ var game = (function () {
 
     function update() {
 
-        if (!youLoose && player && player.dead && playerRespawnAt && new Date().getTime() >= playerRespawnAt) {
-            revivePlayer(player);
+        if (damageSystem) {
+            damageSystem.update(new Date().getTime());
         }
 
         if (!assetsReady) {
@@ -2314,23 +2318,9 @@ var game = (function () {
     }
 
     function handlePlayerDamage(source) {
-        var nowTime = new Date().getTime();
-        var damageSource = source === true ? 'projectile' : (source === false ? 'contact' : source);
-        if (player.invulnerableUntil && nowTime < player.invulnerableUntil) {
-            return;
+        if (damageSystem) {
+            damageSystem.handleDamage(source);
         }
-        if (damageSource === 'projectile' && runUpgrades.dodgeTaken) {
-            runUpgrades.dodgeTaken = false;
-            player.invulnerableUntil = nowTime + 800;
-            return;
-        }
-        if (runUpgrades.shieldStacks > 0) {
-            runUpgrades.shieldStacks--;
-            player.invulnerableUntil = nowTime + 800;
-            return;
-        }
-        player.invulnerableUntil = nowTime + 800;
-        player.killPlayer();
     }
 
     /******************************* MEJORES PUNTUACIONES (LOCALSTORAGE) *******************************/
