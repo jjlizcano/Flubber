@@ -526,6 +526,10 @@ var game = (function () {
             }
         }) : null;
 
+        if (!playerEntityFactory) {
+            throw new Error('FlubberPlayerEntity module is required to create player');
+        }
+
         enemyEntityFactory = window.FlubberEnemyEntity ? window.FlubberEnemyEntity.create({
             getCanvasWidth: function () {
                 return canvas.width;
@@ -653,7 +657,8 @@ var game = (function () {
             }
             applyDebugRewardsForTest();
             assetsReady = true;
-            startCountdown('Nivel ' + currentLevel + ' - Fase ' + currentPhase);
+            stageManager.startCountdown('Nivel ' + currentLevel + ' - Fase ' + currentPhase);
+            syncStageStateFromManager();
             showLifeAndScore();
         });
     }
@@ -1063,7 +1068,8 @@ var game = (function () {
         applyReward(selectedReward);
         rewardChoices = [];
         rewardSelectedIndex = 0;
-        completeStageClear();
+        stageManager.completeStageClear();
+        syncStageStateFromManager();
     }
 
     function drawRewardSelector() {
@@ -1182,10 +1188,6 @@ var game = (function () {
         bufferctx.restore();
     }
 
-    function getCurrentStageConfig() {
-        return stageManager.getCurrentStageConfig();
-    }
-
     function shouldOpenRewardSelector() {
         return stageManager.shouldOpenRewardSelector();
     }
@@ -1202,41 +1204,6 @@ var game = (function () {
 
     function clearStageEntities() {
         stageManager.clearStageEntities();
-        syncStageStateFromManager();
-    }
-
-    function clearStageSpawnScheduler() {
-        stageManager.clearStageSpawnScheduler();
-        syncStageStateFromManager();
-    }
-
-    function startSummary(message) {
-        stageManager.startSummary(message);
-        syncStageStateFromManager();
-    }
-
-    function startCountdown(message) {
-        stageManager.startCountdown(message);
-        syncStageStateFromManager();
-    }
-
-    function startCurrentStage() {
-        stageManager.startCurrentStage();
-        syncStageStateFromManager();
-    }
-
-    function spawnStageEnemies(stageConfig) {
-        stageManager.spawnStageEnemies(stageConfig);
-        syncStageStateFromManager();
-    }
-
-    function spawnNextEnemyWave(stageConfig) {
-        stageManager.spawnNextEnemyWave(stageConfig);
-        syncStageStateFromManager();
-    }
-
-    function scheduleNextEnemyWave(stageConfig, forceDelay) {
-        stageManager.scheduleNextEnemyWave(stageConfig, forceDelay);
         syncStageStateFromManager();
     }
 
@@ -1266,20 +1233,11 @@ var game = (function () {
         return boss;
     }
 
-    function isStageCleared() {
-        return stageManager.isStageCleared();
-    }
-
     function handleStageCleared() {
         if (shouldOpenRewardSelector()) {
             openRewardSelector();
             return;
         }
-
-        completeStageClear();
-    }
-
-    function completeStageClear() {
         stageManager.completeStageClear();
         syncStageStateFromManager();
     }
@@ -1340,53 +1298,7 @@ var game = (function () {
     }
 
     function Player(life, score) {
-        if (playerEntityFactory) {
-            return playerEntityFactory.createPlayer(life, score);
-        }
-
-        player = playerSpriteImage;
-        resetPlayerPosition(player);
-        player.life = life;
-        player.score = score;
-        player.dead = false;
-        player.speed = playerSpeed;
-        player.invulnerableUntil = 0;
-
-        var shoot = function () {
-            if (nextPlayerShot < now || now == 0) {
-                playerShot = shotEntities ? shotEntities.createPlayerShot(player.posX + (player.width / 2) - 5, player.posY) : new PlayerShot(player.posX + (player.width / 2) - 5, player.posY);
-                playerShot.damage = playerShotDamage;
-                playerShot.scale = playerShotScale;
-                playerShot.remainingBounces = runUpgrades.bounceStacks;
-                playerShot.isHoming = runUpgrades.homingStacks > 0;
-                playerShot.vx = 0;
-                playerShot.vy = -playerShot.speed;
-                playerShot.add();
-                now += playerShotDelay;
-                nextPlayerShot = now + playerShotDelay;
-            } else {
-                now = new Date().getTime();
-            }
-        };
-
-        player.doAnything = function() {
-            if (player.dead)
-                return;
-            if (keyPressed.left && player.posX > 5)
-                player.posX -= player.speed;
-            if (keyPressed.right && player.posX < (canvas.width - player.width - 5))
-                player.posX += player.speed;
-            if (keyPressed.fire)
-                shoot();
-        };
-
-        player.killPlayer = function() {
-            if (damageSystem) {
-                damageSystem.killPlayer();
-            }
-        };
-
-        return player;
+        return playerEntityFactory.createPlayer(life, score);
     }
 
     /******************************* DISPAROS *******************************/
@@ -1667,7 +1579,7 @@ var game = (function () {
             drawDebugHitboxes();
         }
 
-        if (isStageCleared()) {
+        if (stageManager.isStageCleared()) {
             handleStageCleared();
             return;
         }
