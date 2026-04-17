@@ -17,6 +17,9 @@ arrayRemove = function (array, from) {
 
 var game = (function () {
 
+    var gameConfig = window.FlubberGameConfig || {};
+    var collisionSystem = window.FlubberCollisionSystem || null;
+
     // Variables globales a la aplicacion
     var canvas,
         ctx,
@@ -27,30 +30,30 @@ var game = (function () {
         playerSpriteImage,
         bgMain,
         bgBoss,
-        defaultEnemySpeed = 1,
-        totalLevels = 2,
-        phasesPerLevel = 10,
-        playerLife = 3,
-        shotSpeed = 5,
-        playerSpeed = 5,
+        defaultEnemySpeed = gameConfig.defaultEnemySpeed || 1,
+        totalLevels = gameConfig.totalLevels || 2,
+        phasesPerLevel = gameConfig.phasesPerLevel || 10,
+        playerLife = gameConfig.playerLife || 3,
+        shotSpeed = gameConfig.shotSpeed || 5,
+        playerSpeed = gameConfig.playerSpeed || 5,
         currentLevel = 1,
         currentPhase = 1,
         currentStageType = 'normal',
         stageState = 'countdown',
         stageMessage = '',
         stageTransitionUntil = 0,
-        stageSummaryDuration = 2000,
-        stageCountdownDuration = 3000,
+        stageSummaryDuration = gameConfig.stageSummaryDuration || 2000,
+        stageCountdownDuration = gameConfig.stageCountdownDuration || 3000,
         activeStageConfig,
         pendingStageSpawns = 0,
         spawnedStageEnemies = 0,
         stageSpawnTimeout = null,
         youLoose = false,
         congratulations = false,
-        minHorizontalOffset = 100,
-        maxHorizontalOffset = 400,
+        minHorizontalOffset = gameConfig.minHorizontalOffset || 100,
+        maxHorizontalOffset = gameConfig.maxHorizontalOffset || 400,
         activeEnemies = [],
-        totalBestScoresToShow = 5, // las mejores puntuaciones que se mostraran
+        totalBestScoresToShow = gameConfig.totalBestScoresToShow || 5, // las mejores puntuaciones que se mostraran
         playerShotsBuffer = [],
         evilShotsBuffer = [],
         evilShotImage,
@@ -65,10 +68,10 @@ var game = (function () {
             killed : new Image()
         },
         keyPressed = {},
-        keyMap = {
+        keyMap = gameConfig.keyMap || {
             left: 37,
             right: 39,
-            fire: 32     // tecla espacio
+            fire: 32
         },
         nextPlayerShot = 0,
         playerShotDelay = 250,
@@ -76,9 +79,10 @@ var game = (function () {
         assetsReady = false,
         assetsLoaded = 0,
         assetsTotal = 0,
-        debugHitboxes = false;
+        debugHitboxes = false,
+        playerRespawnAt = 0;
 
-    var arcadeTheme = {
+    var arcadeTheme = gameConfig.arcadeTheme || {
         panelBg: 'rgba(25, 8, 32, 0.7)',
         panelStroke: 'rgba(255, 180, 0, 0.75)',
         primaryText: '#ffd447',
@@ -93,33 +97,11 @@ var game = (function () {
         countdownFont: "bold 58px 'Courier New', monospace"
     };
 
-    var enemyTypeConfigs = {
-        1: { spriteIndex: 0, lifeBonus: 0, shotsBonus: 0, speedBonus: 0.14, pointsBonus: 0 },
-        2: { spriteIndex: 1, lifeBonus: 1, shotsBonus: 0, speedBonus: 0.10, pointsBonus: 1 },
-        3: { spriteIndex: 2, lifeBonus: 2, shotsBonus: 1, speedBonus: 0.08, pointsBonus: 3 },
-        4: { spriteIndex: 3, lifeBonus: 3, shotsBonus: 1, speedBonus: 0.05, pointsBonus: 5 },
-        5: { spriteIndex: 4, lifeBonus: 4, shotsBonus: 1, speedBonus: 0.00, pointsBonus: 7 }
-    };
+    var enemyTypeConfigs = gameConfig.enemyTypeConfigs || {};
 
-    var bossByLevel = {
-        1: { spriteIndex: 0, lifeBonus: 0, shotsBonus: 0, speedBonus: 0.00, pointsBonus: 0 },
-        2: { spriteIndex: 4, lifeBonus: 4, shotsBonus: 4, speedBonus: 0.10, pointsBonus: 15 }
-    };
+    var bossByLevel = gameConfig.bossByLevel || {};
 
-    var rewardCatalog = {
-        cadence: { id: 'cadence', name: 'Mas cadencia', description: 'Disparas mas rapido', maxStacks: 3, oneTime: false, rarity: 'common' },
-        shield: { id: 'shield', name: 'Escudo', description: 'Absorbe un golpe', maxStacks: 3, oneTime: false, rarity: 'common' },
-        bigBullets: { id: 'bigBullets', name: 'Balas grandes', description: 'Aumenta tamano y alcance', maxStacks: 2, oneTime: false, rarity: 'uncommon' },
-        homing: { id: 'homing', name: 'Balas teledirigidas', description: 'Buscan enemigos cercanos', maxStacks: 1, oneTime: true, rarity: 'rare' },
-        life: { id: 'life', name: '+1 vida', description: 'Ganas una vida extra', maxStacks: 1, oneTime: true, rarity: 'rare' },
-        fogueo: { id: 'fogueo', name: 'Fogueo', description: 'Limpia balas enemigas periodicamente', maxStacks: 1, oneTime: true, rarity: 'rare' },
-        bounce: { id: 'bounce', name: 'Balas con rebote', description: 'Rebota una vez entre objetivos', maxStacks: 1, oneTime: true, rarity: 'uncommon' },
-        slow: { id: 'slow', name: 'Balas ralentizantes', description: 'Enemigos ralentizados al impactar', maxStacks: 2, oneTime: false, rarity: 'uncommon' },
-        speed: { id: 'speed', name: 'Mas velocidad', description: 'Mueve mas rapido la nave', maxStacks: 2, oneTime: false, rarity: 'common' },
-        points: { id: 'points', name: 'Multiplicador puntos', description: 'Mas puntos por enemigo', maxStacks: 2, oneTime: false, rarity: 'common' },
-        dodge: { id: 'dodge', name: 'Esquivo', description: 'Evita 1 disparo enemigo', maxStacks: 1, oneTime: true, rarity: 'rare' },
-        damage: { id: 'damage', name: 'Mas daño', description: 'Tus balas quitan mas vida', maxStacks: 2, oneTime: false, rarity: 'uncommon' }
-    };
+    var rewardCatalog = gameConfig.rewardCatalog || {};
 
     var runUpgrades = {
         cadenceStacks: 0,
@@ -168,7 +150,7 @@ var game = (function () {
     }
 
     function getRectBounds(x, y, width, height) {
-        return {
+        return collisionSystem ? collisionSystem.getRectBounds(x, y, width, height) : {
             left: x,
             top: y,
             right: x + width,
@@ -179,39 +161,47 @@ var game = (function () {
     }
 
     function rectsOverlap(firstRect, secondRect) {
-        return firstRect.left < secondRect.right &&
+        return collisionSystem ? collisionSystem.rectsOverlap(firstRect, secondRect) : (
+            firstRect.left < secondRect.right &&
             firstRect.right > secondRect.left &&
             firstRect.top < secondRect.bottom &&
-            firstRect.bottom > secondRect.top;
+            firstRect.bottom > secondRect.top
+        );
     }
 
     function circleRectOverlap(circle, rect) {
-        var closestX = Math.max(rect.left, Math.min(circle.x, rect.right));
-        var closestY = Math.max(rect.top, Math.min(circle.y, rect.bottom));
-        var deltaX = circle.x - closestX;
-        var deltaY = circle.y - closestY;
-        return (deltaX * deltaX) + (deltaY * deltaY) <= (circle.radius * circle.radius);
+        return collisionSystem ? collisionSystem.circleRectOverlap(circle, rect) : (function () {
+            var closestX = Math.max(rect.left, Math.min(circle.x, rect.right));
+            var closestY = Math.max(rect.top, Math.min(circle.y, rect.bottom));
+            var deltaX = circle.x - closestX;
+            var deltaY = circle.y - closestY;
+            return (deltaX * deltaX) + (deltaY * deltaY) <= (circle.radius * circle.radius);
+        })();
     }
 
     function getPlayerHitCircle() {
-        var width = player && player.width ? player.width : getImageDimension(playerSpriteImage, 52);
-        var height = player && player.height ? player.height : 66;
-        var radius = Math.max(12, Math.round(Math.min(width, height) * 0.28));
+        return collisionSystem ? collisionSystem.getPlayerHitCircle(player, playerSpriteImage) : (function () {
+            var width = player && player.width ? player.width : getImageDimension(playerSpriteImage, 52);
+            var height = player && player.height ? player.height : 66;
+            var radius = Math.max(12, Math.round(Math.min(width, height) * 0.28));
 
-        return {
-            x: (player ? player.posX : 0) + (width / 2),
-            y: (player ? player.posY : 0) + Math.round(height * 0.44),
-            radius: radius
-        };
+            return {
+                x: (player ? player.posX : 0) + (width / 2),
+                y: (player ? player.posY : 0) + Math.round(height * 0.44),
+                radius: radius
+            };
+        })();
     }
 
     function getPlayerBounds() {
-        var circle = getPlayerHitCircle();
-        return getRectBounds(circle.x - circle.radius, circle.y - circle.radius, circle.radius * 2, circle.radius * 2);
+        return collisionSystem ? collisionSystem.getPlayerBounds(player, playerSpriteImage) : (function () {
+            var circle = getPlayerHitCircle();
+            return getRectBounds(circle.x - circle.radius, circle.y - circle.radius, circle.radius * 2, circle.radius * 2);
+        })();
     }
 
     function getEnemyBounds(enemy) {
-        return getRectBounds(
+        return collisionSystem ? collisionSystem.getEnemyBounds(enemy) : getRectBounds(
             enemy.posX,
             enemy.posY,
             enemy.spriteWidth || getImageDimension(enemy.image, 40),
@@ -220,9 +210,11 @@ var game = (function () {
     }
 
     function getPlayerShotBounds(shot) {
-        var width = Math.max(10, Math.round(10 * (shot.scale || 1)));
-        var height = Math.max(18, Math.round(20 * (shot.scale || 1)));
-        return getRectBounds(shot.posX - (width / 2), shot.posY, width, height);
+        return collisionSystem ? collisionSystem.getPlayerShotBounds(shot) : (function () {
+            var width = Math.max(10, Math.round(10 * (shot.scale || 1)));
+            var height = Math.max(18, Math.round(20 * (shot.scale || 1)));
+            return getRectBounds(shot.posX - (width / 2), shot.posY, width, height);
+        })();
     }
 
     function resetPlayerPosition(targetPlayer) {
@@ -235,8 +227,21 @@ var game = (function () {
         targetPlayer.posY = canvas.height - targetPlayer.height - 10;
     }
 
+    function revivePlayer(targetPlayer) {
+        if (!targetPlayer) {
+            return;
+        }
+        resetPlayerPosition(targetPlayer);
+        targetPlayer.dead = false;
+        targetPlayer.speed = playerSpeed;
+        targetPlayer.invulnerableUntil = new Date().getTime() + 350;
+        nextPlayerShot = 0;
+        now = 0;
+        playerRespawnAt = 0;
+    }
+
     function getEnemyShotBounds(shot) {
-        return getRectBounds(shot.posX, shot.posY, 10, 20);
+        return collisionSystem ? collisionSystem.getEnemyShotBounds(shot) : getRectBounds(shot.posX, shot.posY, 10, 20);
     }
 
     function markAssetLoaded(onComplete) {
@@ -1322,20 +1327,16 @@ var game = (function () {
         player.killPlayer = function() {
             if (this.life > 1) {
                 this.dead = true;
+                this.life = this.life - 1;
                 evilShotsBuffer.splice(0, evilShotsBuffer.length);
                 playerShotsBuffer.splice(0, playerShotsBuffer.length);
-                var remainingLife = this.life - 1;
-                var currentScore = this.score;
-                setTimeout(function () {
-                    resetPlayerPosition(player);
-                    player.life = remainingLife;
-                    player.score = currentScore;
-                    player.dead = false;
-                    player.speed = playerSpeed;
-                    player.invulnerableUntil = new Date().getTime() + 350;
-                }, 500);
+                playerRespawnAt = new Date().getTime() + 500;
 
             } else {
+                this.dead = true;
+                playerRespawnAt = 0;
+                nextPlayerShot = 0;
+                now = 0;
                 saveFinalScore();
                 clearStageEntities();
                 youLoose = true;
@@ -2092,6 +2093,10 @@ var game = (function () {
 
     function update() {
 
+        if (!youLoose && player && player.dead && playerRespawnAt && new Date().getTime() >= playerRespawnAt) {
+            revivePlayer(player);
+        }
+
         if (!assetsReady) {
             drawLoadingScreen();
             return;
@@ -2203,10 +2208,13 @@ var game = (function () {
     function updateEvilShot(evilShot, id) {
         if (evilShot) {
             evilShot.identifier = id;
-            if (player.dead) {
+            if (!player.dead && circleRectOverlap(getPlayerHitCircle(), getEnemyShotBounds(evilShot))) {
+                handlePlayerDamage('projectile');
+                evilShot.deleteShot(parseInt(evilShot.identifier));
                 return;
             }
-            if (!circleRectOverlap(getPlayerHitCircle(), getEnemyShotBounds(evilShot))) {
+
+            if (player.dead || !circleRectOverlap(getPlayerHitCircle(), getEnemyShotBounds(evilShot))) {
                 var vx = typeof evilShot.vx === 'number' ? evilShot.vx : 0;
                 var vy = typeof evilShot.vy === 'number' ? evilShot.vy : evilShot.speed;
                 if (evilShot.waveMotion) {
@@ -2222,9 +2230,6 @@ var game = (function () {
                 } else {
                     evilShot.deleteShot(parseInt(evilShot.identifier));
                 }
-            } else {
-                handlePlayerDamage('projectile');
-                evilShot.deleteShot(parseInt(evilShot.identifier));
             }
         }
     }
