@@ -24,6 +24,7 @@ var game = (function () {
         bufferctx,
         player,
         playerShot,
+        playerSpriteImage,
         bgMain,
         bgBoss,
         defaultEnemySpeed = 1,
@@ -71,7 +72,11 @@ var game = (function () {
         },
         nextPlayerShot = 0,
         playerShotDelay = 250,
-        now = 0;
+        now = 0,
+        assetsReady = false,
+        assetsLoaded = 0,
+        assetsTotal = 0,
+        debugHitboxes = false;
 
     var arcadeTheme = {
         panelBg: 'rgba(25, 8, 32, 0.7)',
@@ -146,7 +151,8 @@ var game = (function () {
         enabled: false,
         level: 1,
         phase: 1,
-        stageType: 'normal'
+        stageType: 'normal',
+        hitboxes: false
     };
 
     function loop() {
@@ -154,36 +160,255 @@ var game = (function () {
         draw();
     }
 
-    function preloadImages () {
+    function getImageDimension(image, fallbackDimension) {
+        if (image && image.width) {
+            return image.width;
+        }
+        return fallbackDimension;
+    }
+
+    function getRectBounds(x, y, width, height) {
+        return {
+            left: x,
+            top: y,
+            right: x + width,
+            bottom: y + height,
+            width: width,
+            height: height
+        };
+    }
+
+    function rectsOverlap(firstRect, secondRect) {
+        return firstRect.left < secondRect.right &&
+            firstRect.right > secondRect.left &&
+            firstRect.top < secondRect.bottom &&
+            firstRect.bottom > secondRect.top;
+    }
+
+    function circleRectOverlap(circle, rect) {
+        var closestX = Math.max(rect.left, Math.min(circle.x, rect.right));
+        var closestY = Math.max(rect.top, Math.min(circle.y, rect.bottom));
+        var deltaX = circle.x - closestX;
+        var deltaY = circle.y - closestY;
+        return (deltaX * deltaX) + (deltaY * deltaY) <= (circle.radius * circle.radius);
+    }
+
+    function getPlayerHitCircle() {
+        var width = player && player.width ? player.width : getImageDimension(playerSpriteImage, 52);
+        var height = player && player.height ? player.height : 66;
+        var radius = Math.max(12, Math.round(Math.min(width, height) * 0.28));
+
+        return {
+            x: (player ? player.posX : 0) + (width / 2),
+            y: (player ? player.posY : 0) + Math.round(height * 0.44),
+            radius: radius
+        };
+    }
+
+    function getPlayerBounds() {
+        var circle = getPlayerHitCircle();
+        return getRectBounds(circle.x - circle.radius, circle.y - circle.radius, circle.radius * 2, circle.radius * 2);
+    }
+
+    function getEnemyBounds(enemy) {
+        return getRectBounds(
+            enemy.posX,
+            enemy.posY,
+            enemy.spriteWidth || getImageDimension(enemy.image, 40),
+            enemy.spriteHeight || 40
+        );
+    }
+
+    function getPlayerShotBounds(shot) {
+        var width = Math.max(10, Math.round(10 * (shot.scale || 1)));
+        var height = Math.max(18, Math.round(20 * (shot.scale || 1)));
+        return getRectBounds(shot.posX - (width / 2), shot.posY, width, height);
+    }
+
+    function resetPlayerPosition(targetPlayer) {
+        if (!targetPlayer) {
+            return;
+        }
+        targetPlayer.width = targetPlayer.width || getImageDimension(playerSpriteImage, 52);
+        targetPlayer.height = targetPlayer.height || 66;
+        targetPlayer.posX = (canvas.width / 2) - (targetPlayer.width / 2);
+        targetPlayer.posY = canvas.height - targetPlayer.height - 10;
+    }
+
+    function getEnemyShotBounds(shot) {
+        return getRectBounds(shot.posX, shot.posY, 10, 20);
+    }
+
+    function markAssetLoaded(onComplete) {
+        assetsLoaded++;
+        if (assetsLoaded >= assetsTotal && typeof onComplete === 'function') {
+            onComplete();
+        }
+    }
+
+    function drawLoadingScreen() {
+        var centerX = canvas.width / 2;
+        var centerY = canvas.height / 2;
+        bufferctx.clearRect(0, 0, canvas.width, canvas.height);
+        bufferctx.fillStyle = '#140814';
+        bufferctx.fillRect(0, 0, canvas.width, canvas.height);
+        drawArcadePanel(70, centerY - 90, canvas.width - 140, 180, 0.94, arcadeTheme.panelStroke);
+        drawArcadeText('CARGANDO SPRITES', centerX, centerY - 26, {
+            color: arcadeTheme.primaryText,
+            font: arcadeTheme.titleFont,
+            align: 'center',
+            glowColor: arcadeTheme.glow,
+            glowBlur: 10,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 4
+        });
+        drawArcadeText('(' + assetsLoaded + ' / ' + assetsTotal + ')', centerX, centerY + 18, {
+            color: '#fff3a3',
+            font: "bold 16px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 120, 0, 0.8)',
+            glowBlur: 6,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
+    }
+
+    function drawDebugHitboxes() {
+        var i;
+
+        if (player && !player.dead) {
+            var playerHitCircle = getPlayerHitCircle();
+            bufferctx.save();
+            bufferctx.strokeStyle = 'rgba(80, 255, 160, 0.9)';
+            bufferctx.lineWidth = 2;
+            bufferctx.beginPath();
+            bufferctx.arc(playerHitCircle.x, playerHitCircle.y, playerHitCircle.radius, 0, Math.PI * 2, false);
+            bufferctx.stroke();
+            bufferctx.restore();
+        }
+
+        for (i = 0; i < activeEnemies.length; i++) {
+            if (activeEnemies[i] && !activeEnemies[i].dead) {
+                var enemyBounds = getEnemyBounds(activeEnemies[i]);
+                bufferctx.save();
+                bufferctx.strokeStyle = 'rgba(255, 80, 120, 0.9)';
+                bufferctx.lineWidth = 2;
+                bufferctx.strokeRect(enemyBounds.left, enemyBounds.top, enemyBounds.width, enemyBounds.height);
+                bufferctx.restore();
+            }
+        }
+
+        for (i = 0; i < playerShotsBuffer.length; i++) {
+            var playerShotBounds = getPlayerShotBounds(playerShotsBuffer[i]);
+            bufferctx.save();
+            bufferctx.strokeStyle = 'rgba(80, 180, 255, 0.9)';
+            bufferctx.lineWidth = 1;
+            bufferctx.strokeRect(playerShotBounds.left, playerShotBounds.top, playerShotBounds.width, playerShotBounds.height);
+            bufferctx.restore();
+        }
+
+        for (i = 0; i < evilShotsBuffer.length; i++) {
+            var evilShotBounds = getEnemyShotBounds(evilShotsBuffer[i]);
+            bufferctx.save();
+            bufferctx.strokeStyle = 'rgba(255, 200, 80, 0.9)';
+            bufferctx.lineWidth = 1;
+            bufferctx.strokeRect(evilShotBounds.left, evilShotBounds.top, evilShotBounds.width, evilShotBounds.height);
+            bufferctx.restore();
+        }
+    }
+
+    function preloadImages (onComplete) {
+        assetsLoaded = 0;
+        assetsReady = false;
+        assetsTotal = 24;
+
+        playerSpriteImage = new Image();
+        playerSpriteImage.onload = function () {
+            markAssetLoaded(onComplete);
+        };
+        playerSpriteImage.onerror = function () {
+            markAssetLoaded(onComplete);
+        };
+        playerSpriteImage.src = 'images/bueno.png';
+
         for (var i = 1; i <= 8; i++) {
             var evilImage = new Image();
+            evilImage.onload = function () {
+                markAssetLoaded(onComplete);
+            };
+            evilImage.onerror = function () {
+                markAssetLoaded(onComplete);
+            };
             evilImage.src = 'images/malo' + i + '.png';
             evilImages.animation[i-1] = evilImage;
             var bossImage = new Image();
+            bossImage.onload = function () {
+                markAssetLoaded(onComplete);
+            };
+            bossImage.onerror = function () {
+                markAssetLoaded(onComplete);
+            };
             bossImage.src = 'images/jefe' + i + '.png';
             bossImages.animation[i-1] = bossImage;
         }
+        evilImages.killed.onload = function () {
+            markAssetLoaded(onComplete);
+        };
+        evilImages.killed.onerror = function () {
+            markAssetLoaded(onComplete);
+        };
         evilImages.killed.src = 'images/malo_muerto.png';
+        bossImages.killed.onload = function () {
+            markAssetLoaded(onComplete);
+        };
+        bossImages.killed.onerror = function () {
+            markAssetLoaded(onComplete);
+        };
         bossImages.killed.src = 'images/jefe_muerto.png';
         bgMain = new Image();
+        bgMain.onload = function () {
+            markAssetLoaded(onComplete);
+        };
+        bgMain.onerror = function () {
+            markAssetLoaded(onComplete);
+        };
         bgMain.src = 'images/fondovertical.png';
         bgBoss = new Image();
+        bgBoss.onload = function () {
+            markAssetLoaded(onComplete);
+        };
+        bgBoss.onerror = function () {
+            markAssetLoaded(onComplete);
+        };
         bgBoss.src = 'images/fondovertical_jefe.png';
         playerShotImage = new Image();
+        playerShotImage.onload = function () {
+            markAssetLoaded(onComplete);
+        };
+        playerShotImage.onerror = function () {
+            markAssetLoaded(onComplete);
+        };
         playerShotImage.src = 'images/disparo_bueno.png';
         evilShotImage = new Image();
+        evilShotImage.onload = function () {
+            markAssetLoaded(onComplete);
+        };
+        evilShotImage.onerror = function () {
+            markAssetLoaded(onComplete);
+        };
         evilShotImage.src = 'images/disparo_malo.png';
         playerKilledImage = new Image();
+        playerKilledImage.onload = function () {
+            markAssetLoaded(onComplete);
+        };
+        playerKilledImage.onerror = function () {
+            markAssetLoaded(onComplete);
+        };
         playerKilledImage.src = 'images/bueno_muerto.png';
 
     }
 
     function init() {
-
-        preloadImages();
-        resetRunUpgrades();
-        refreshPlayerStats();
-
         showBestScores();
 
         canvas = document.getElementById('canvas');
@@ -196,11 +421,7 @@ var game = (function () {
 
         loadDebugStartConfigFromUrl();
         applyDebugStartConfig();
-        player = new Player(playerLife, 0);
-        applyDebugRewardsForTest();
-        startCountdown('Nivel ' + currentLevel + ' - Fase ' + currentPhase);
-
-        showLifeAndScore();
+        debugHitboxes = !!debugStartConfig.hitboxes;
 
         addListener(document, 'keydown', keyDown);
         addListener(document, 'keyup', keyUp);
@@ -210,6 +431,16 @@ var game = (function () {
             requestAnimFrame(anim);
         }
         anim();
+
+        preloadImages(function () {
+            resetRunUpgrades();
+            refreshPlayerStats();
+            player = new Player(playerLife, 0);
+            applyDebugRewardsForTest();
+            assetsReady = true;
+            startCountdown('Nivel ' + currentLevel + ' - Fase ' + currentPhase);
+            showLifeAndScore();
+        });
     }
 
     function applyDebugRewardsForTest() {
@@ -282,6 +513,12 @@ var game = (function () {
             debugStartConfig.enabled = true;
         }
 
+        if (values.hitboxes || values.debughitboxes) {
+            debugStartConfig.hitboxes = values.hitboxes === '1' || values.hitboxes === 'true' || values.hitboxes === 'yes' ||
+                values.debughitboxes === '1' || values.debughitboxes === 'true' || values.debughitboxes === 'yes';
+            debugStartConfig.enabled = true;
+        }
+
         var rewardsFromUrl = values.rewards || values.reward || '';
         if (rewardsFromUrl) {
             debugRewardsForTest = parseDebugRewardList(rewardsFromUrl);
@@ -293,12 +530,14 @@ var game = (function () {
             currentLevel = 1;
             currentPhase = 1;
             currentStageType = 'normal';
+            debugHitboxes = false;
             return;
         }
 
         currentLevel = Math.min(totalLevels, Math.max(1, parseInt(debugStartConfig.level, 10) || 1));
         currentPhase = Math.min(phasesPerLevel, Math.max(1, parseInt(debugStartConfig.phase, 10) || 1));
         currentStageType = debugStartConfig.stageType === 'boss' ? 'boss' : 'normal';
+        debugHitboxes = !!debugStartConfig.hitboxes;
     }
 
     function setDebugStartConfig(config) {
@@ -306,6 +545,7 @@ var game = (function () {
         debugStartConfig.level = config && config.level !== undefined ? config.level : 1;
         debugStartConfig.phase = config && config.phase !== undefined ? config.phase : 1;
         debugStartConfig.stageType = config && config.stageType === 'boss' ? 'boss' : 'normal';
+        debugStartConfig.hitboxes = !!(config && config.hitboxes);
     }
 
     function clearDebugStartConfig() {
@@ -313,6 +553,8 @@ var game = (function () {
         debugStartConfig.level = 1;
         debugStartConfig.phase = 1;
         debugStartConfig.stageType = 'normal';
+        debugStartConfig.hitboxes = false;
+        debugHitboxes = false;
     }
 
     function setDebugRewardsForTest(rewardIds) {
@@ -1041,14 +1283,8 @@ var game = (function () {
     }
 
     function Player(life, score) {
-        var settings = {
-            marginBottom : 10,
-            defaultHeight : 66
-        };
-        player = new Image();
-        player.src = 'images/bueno.png';
-        player.posX = (canvas.width / 2) - (player.width / 2);
-        player.posY = canvas.height - (player.height == 0 ? settings.defaultHeight : player.height) - settings.marginBottom;
+        player = playerSpriteImage;
+        resetPlayerPosition(player);
         player.life = life;
         player.score = score;
         player.dead = false;
@@ -1088,9 +1324,15 @@ var game = (function () {
                 this.dead = true;
                 evilShotsBuffer.splice(0, evilShotsBuffer.length);
                 playerShotsBuffer.splice(0, playerShotsBuffer.length);
-                this.src = playerKilledImage.src;
+                var remainingLife = this.life - 1;
+                var currentScore = this.score;
                 setTimeout(function () {
-                    player = new Player(player.life - 1, player.score);
+                    resetPlayerPosition(player);
+                    player.life = remainingLife;
+                    player.score = currentScore;
+                    player.dead = false;
+                    player.speed = playerSpeed;
+                    player.invulnerableUntil = new Date().getTime() + 350;
                 }, 500);
 
             } else {
@@ -1128,8 +1370,7 @@ var game = (function () {
     function EvilShot (x, y) {
         Object.getPrototypeOf(EvilShot.prototype).constructor.call(this, x, y, evilShotsBuffer, evilShotImage);
         this.isHittingPlayer = function() {
-            return (this.posX >= player.posX && this.posX <= (player.posX + player.width)
-                && this.posY >= player.posY && this.posY <= (player.posY + player.height));
+            return circleRectOverlap(getPlayerHitCircle(), getEnemyShotBounds(this));
         };
     }
 
@@ -1142,10 +1383,10 @@ var game = (function () {
     function Enemy(life, shots, enemyImages, spriteIndex) {
         this.fixedSpriteIndex = typeof spriteIndex === 'number' ? spriteIndex : null;
         this.image = enemyImages.animation[this.fixedSpriteIndex !== null ? this.fixedSpriteIndex : 0];
+        this.spriteWidth = getImageDimension(this.image, 40);
+        this.spriteHeight = getImageDimension(this.image, 40);
         this.imageNumber = 1;
         this.animation = 0;
-        this.spriteWidth = this.image.width || 40;
-        this.spriteHeight = this.image.height || 40;
         this.posX = getRandomNumber(Math.max(1, canvas.width - this.spriteWidth));
         this.posY = -50;
         this.life = life;
@@ -1240,8 +1481,8 @@ var game = (function () {
             if (enemy.enemyType !== 3 && enemy.shots <= 0) {
                 return;
             }
-            var centerX = enemy.posX + (enemy.image.width / 2) - 5;
-            var baseY = enemy.posY + enemy.image.height;
+            var centerX = enemy.posX + (enemy.spriteWidth / 2) - 5;
+            var baseY = enemy.posY + enemy.spriteHeight;
             var shot = new EvilShot(centerX, baseY);
             shot.vx = 0;
             shot.add();
@@ -1396,8 +1637,8 @@ var game = (function () {
             var spread = enemy.sentinelFanSpread || 1.7;
             var step = totalShots > 1 ? (spread / (totalShots - 1)) : 0;
             var startAngle = -(spread / 2);
-            var centerX = enemy.posX + (enemy.image.width / 2) - 5;
-            var baseY = enemy.posY + enemy.image.height;
+            var centerX = enemy.posX + (enemy.spriteWidth / 2) - 5;
+            var baseY = enemy.posY + enemy.spriteHeight;
 
             for (var shotIndex = 0; shotIndex < totalShots; shotIndex++) {
                 var angle = startAngle + (step * shotIndex);
@@ -1547,8 +1788,8 @@ var game = (function () {
                 return;
             }
             if (enemy.shots > 0 && !enemy.dead && stageState === 'playing') {
-                var centerX = enemy.posX + (enemy.image.width / 2) - 5;
-                var baseY = enemy.posY + enemy.image.height;
+                var centerX = enemy.posX + (enemy.spriteWidth / 2) - 5;
+                var baseY = enemy.posY + enemy.spriteHeight;
                 if (enemy.enemyType === 2) {
                     var leftShot = new EvilShot(centerX - 8, baseY);
                     leftShot.vx = -2.2;
@@ -1678,9 +1919,7 @@ var game = (function () {
     /******************************* FIN ENEMIGOS *******************************/
 
     function isEnemyHittingPlayer(enemy) {
-        return (((enemy.posY + enemy.image.height) > player.posY && (player.posY + player.height) >= enemy.posY) &&
-            ((player.posX >= enemy.posX && player.posX <= (enemy.posX + enemy.image.width)) ||
-                (player.posX + player.width >= enemy.posX && (player.posX + player.width) <= (enemy.posX + enemy.image.width))));
+        return circleRectOverlap(getPlayerHitCircle(), getEnemyBounds(enemy));
     }
 
     function isAnyEnemyHittingPlayer() {
@@ -1693,16 +1932,10 @@ var game = (function () {
     }
 
     function checkCollisions(shot) {
+        var shotBounds = getPlayerShotBounds(shot);
         for (var i = 0; i < activeEnemies.length; i++) {
             var enemy = activeEnemies[i];
-            var shotWidth = Math.max(10, Math.round(10 * (shot.scale || 1)));
-            var shotHeight = Math.max(18, Math.round(20 * (shot.scale || 1)));
-            var shotLeft = shot.posX - (shotWidth / 2);
-            var shotRight = shotLeft + shotWidth;
-            var shotTop = shot.posY;
-            var shotBottom = shotTop + shotHeight;
-            if (!enemy.dead && shotLeft <= (enemy.posX + enemy.image.width) && shotRight >= enemy.posX &&
-                shotTop <= (enemy.posY + enemy.image.height) && shotBottom >= enemy.posY) {
+            if (!enemy.dead && rectsOverlap(shotBounds, getEnemyBounds(enemy))) {
                 var damage = shot.damage || playerShotDamage || 1;
                 enemy.life -= damage;
                 if (runUpgrades.slowStacks > 0) {
@@ -1718,8 +1951,8 @@ var game = (function () {
                     shot.isHoming = false;
                     shot.vy = -Math.max(2, shot.speed * 0.75);
                     shot.vx = getBounceHorizontalSpeed(shot, enemy);
-                    shot.posX = enemy.posX + (enemy.image.width / 2);
-                    shot.posY = enemy.posY - shotHeight - 2;
+                    shot.posX = enemy.posX + (enemy.spriteWidth / 2);
+                    shot.posY = enemy.posY - shotBounds.height - 2;
                     return 'keep';
                 }
 
@@ -1859,6 +2092,11 @@ var game = (function () {
 
     function update() {
 
+        if (!assetsReady) {
+            drawLoadingScreen();
+            return;
+        }
+
         drawBackground();
         updateRewardEffects();
 
@@ -1891,7 +2129,7 @@ var game = (function () {
             return;
         }
 
-        bufferctx.drawImage(player, player.posX, player.posY);
+        bufferctx.drawImage(player.dead ? playerKilledImage : player, player.posX, player.posY);
         for (var e = 0; e < activeEnemies.length; e++) {
             var enemy = activeEnemies[e];
             if (enemy) {
@@ -1907,12 +2145,16 @@ var game = (function () {
         }
 
         if (!player.dead && isAnyEnemyHittingPlayer()) {
-            handlePlayerDamage(false);
-        } else {
-            for (var i = 0; i < evilShotsBuffer.length; i++) {
-                var evilShot = evilShotsBuffer[i];
-                updateEvilShot(evilShot, i);
-            }
+            handlePlayerDamage('contact');
+        }
+
+        for (var i = 0; i < evilShotsBuffer.length; i++) {
+            var evilShot = evilShotsBuffer[i];
+            updateEvilShot(evilShot, i);
+        }
+
+        if (debugHitboxes) {
+            drawDebugHitboxes();
         }
 
         if (isStageCleared()) {
@@ -1964,7 +2206,7 @@ var game = (function () {
             if (player.dead) {
                 return;
             }
-            if (!evilShot.isHittingPlayer()) {
+            if (!circleRectOverlap(getPlayerHitCircle(), getEnemyShotBounds(evilShot))) {
                 var vx = typeof evilShot.vx === 'number' ? evilShot.vx : 0;
                 var vy = typeof evilShot.vy === 'number' ? evilShot.vy : evilShot.speed;
                 if (evilShot.waveMotion) {
@@ -1981,7 +2223,7 @@ var game = (function () {
                     evilShot.deleteShot(parseInt(evilShot.identifier));
                 }
             } else {
-                handlePlayerDamage(true);
+                handlePlayerDamage('projectile');
                 evilShot.deleteShot(parseInt(evilShot.identifier));
             }
         }
@@ -2009,7 +2251,7 @@ var game = (function () {
         if (!target) {
             return;
         }
-        var targetCenter = target.posX + (target.image.width / 2);
+        var targetCenter = target.posX + (target.spriteWidth / 2);
         var shotCenter = playerShot.posX;
         var steerAmount = 2 + runUpgrades.homingStacks;
         if (targetCenter > shotCenter) {
@@ -2027,7 +2269,7 @@ var game = (function () {
             if (enemy.dead) {
                 continue;
             }
-            var enemyCenter = enemy.posX + (enemy.image.width / 2);
+            var enemyCenter = enemy.posX + (enemy.spriteWidth / 2);
             var distance = Math.abs(enemyCenter - playerShot.posX) + Math.max(0, playerShot.posY - enemy.posY);
             if (nearestDistance === null || distance < nearestDistance) {
                 nearestDistance = distance;
@@ -2045,7 +2287,7 @@ var game = (function () {
             if (enemy.dead || enemy === impactedEnemy) {
                 continue;
             }
-            var enemyCenter = enemy.posX + (enemy.image.width / 2);
+            var enemyCenter = enemy.posX + (enemy.spriteWidth / 2);
             var distance = Math.abs(enemyCenter - playerShot.posX);
             if (nearestDistance === null || distance < nearestDistance) {
                 nearestDistance = distance;
@@ -2055,7 +2297,7 @@ var game = (function () {
 
         var horizontalSpeed = Math.max(1.5, playerShot.speed * 0.65);
         if (nearestEnemy) {
-            return (nearestEnemy.posX + (nearestEnemy.image.width / 2)) >= playerShot.posX ? horizontalSpeed : -horizontalSpeed;
+            return (nearestEnemy.posX + (nearestEnemy.spriteWidth / 2)) >= playerShot.posX ? horizontalSpeed : -horizontalSpeed;
         }
         return getRandomNumber(2) === 0 ? -horizontalSpeed : horizontalSpeed;
     }
@@ -2066,12 +2308,13 @@ var game = (function () {
         bufferctx.drawImage(playerShot.image, playerShot.posX - (width / 2), playerShot.posY, width, height);
     }
 
-    function handlePlayerDamage(fromProjectile) {
+    function handlePlayerDamage(source) {
         var nowTime = new Date().getTime();
+        var damageSource = source === true ? 'projectile' : (source === false ? 'contact' : source);
         if (player.invulnerableUntil && nowTime < player.invulnerableUntil) {
             return;
         }
-        if (fromProjectile && runUpgrades.dodgeTaken) {
+        if (damageSource === 'projectile' && runUpgrades.dodgeTaken) {
             runUpgrades.dodgeTaken = false;
             player.invulnerableUntil = nowTime + 800;
             return;
