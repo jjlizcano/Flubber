@@ -10,9 +10,25 @@ window.requestAnimFrame = (function () {
         };
 })();
 arrayRemove = function (array, from) {
-    var rest = array.slice((from) + 1 || array.length);
-    array.length = from < 0 ? array.length + from : from;
-    return array.push.apply(array, rest);
+    if (!array || !array.length) {
+        return 0;
+    }
+
+    var index = parseInt(from, 10);
+    if (isNaN(index)) {
+        return array.length;
+    }
+
+    if (index < 0) {
+        index = array.length + index;
+    }
+
+    if (index < 0 || index >= array.length) {
+        return array.length;
+    }
+
+    array.splice(index, 1);
+    return array.length;
 };
 
 var game = (function () {
@@ -21,6 +37,7 @@ var game = (function () {
     var collisionSystem = window.FlubberCollisionSystem || null;
     var damageSystem = null;
     var shotEntities = null;
+    var playerEntityFactory = null;
 
     // Variables globales a la aplicacion
     var canvas,
@@ -436,6 +453,57 @@ var game = (function () {
             circleRectOverlap: circleRectOverlap,
             getPlayerHitCircle: getPlayerHitCircle,
             getEnemyShotBounds: getEnemyShotBounds
+        }) : null;
+
+        playerEntityFactory = window.FlubberPlayerEntity ? window.FlubberPlayerEntity.create({
+            getPlayerSpriteImage: function () {
+                return playerSpriteImage;
+            },
+            resetPlayerPosition: resetPlayerPosition,
+            getPlayerSpeed: function () {
+                return playerSpeed;
+            },
+            createPlayerShot: function (x, y) {
+                return shotEntities ? shotEntities.createPlayerShot(x, y) : new PlayerShot(x, y);
+            },
+            getPlayerShotDamage: function () {
+                return playerShotDamage;
+            },
+            getPlayerShotScale: function () {
+                return playerShotScale;
+            },
+            getRunUpgrades: function () {
+                return runUpgrades;
+            },
+            getPlayerShotDelay: function () {
+                return playerShotDelay;
+            },
+            getNow: function () {
+                return new Date().getTime();
+            },
+            getNowValue: function () {
+                return now;
+            },
+            setNowValue: function (value) {
+                now = value;
+            },
+            getNextPlayerShot: function () {
+                return nextPlayerShot;
+            },
+            setNextPlayerShot: function (value) {
+                nextPlayerShot = value;
+            },
+            getKeyPressed: function () {
+                return keyPressed;
+            },
+            getCanvasWidth: function () {
+                return canvas.width;
+            },
+            onKillPlayer: function () {
+                if (damageSystem) {
+                    damageSystem.killPlayer();
+                }
+            }
         }) : null;
 
         damageSystem = window.FlubberDamageSystem ? window.FlubberDamageSystem.create({
@@ -1328,6 +1396,10 @@ var game = (function () {
     }
 
     function Player(life, score) {
+        if (playerEntityFactory) {
+            return playerEntityFactory.createPlayer(life, score);
+        }
+
         player = playerSpriteImage;
         resetPlayerPosition(player);
         player.life = life;
@@ -2236,8 +2308,8 @@ var game = (function () {
         if (evilShot) {
             evilShot.identifier = id;
             if (!player.dead && circleRectOverlap(getPlayerHitCircle(), getEnemyShotBounds(evilShot))) {
-                handlePlayerDamage('projectile');
                 evilShot.deleteShot(parseInt(evilShot.identifier));
+                handlePlayerDamage('projectile');
                 return;
             }
 
