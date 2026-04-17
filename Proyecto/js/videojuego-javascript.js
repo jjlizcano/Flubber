@@ -806,6 +806,9 @@ var game = (function () {
 
     function shouldOpenRewardSelector() {
         if (currentStageType === 'boss') {
+            if (currentLevel === totalLevels) {
+                return false;
+            }
             return true;
         }
         return currentStageType === 'normal' && currentPhase % 2 === 0;
