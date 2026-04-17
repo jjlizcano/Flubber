@@ -37,6 +37,7 @@ var game = (function () {
     var collisionSystem = window.FlubberCollisionSystem || null;
     var damageSystem = null;
     var shotEntities = null;
+    var shotRuntime = null;
     var playerEntityFactory = null;
     var enemyEntityFactory = null;
     var stageManager = null;
@@ -474,6 +475,37 @@ var game = (function () {
             getPlayerHitCircle: getPlayerHitCircle,
             getEnemyShotBounds: getEnemyShotBounds
         }) : null;
+
+        shotRuntime = window.FlubberShotRuntime ? window.FlubberShotRuntime.create({
+            getPlayerShotsBuffer: function () {
+                return playerShotsBuffer;
+            },
+            getEvilShotsBuffer: function () {
+                return evilShotsBuffer;
+            },
+            getPlayer: function () {
+                return player;
+            },
+            getCanvasWidth: function () {
+                return canvas.width;
+            },
+            getCanvasHeight: function () {
+                return canvas.height;
+            },
+            getBufferContext: function () {
+                return bufferctx;
+            },
+            steerPlayerShot: steerPlayerShot,
+            checkCollisions: checkCollisions,
+            circleRectOverlap: circleRectOverlap,
+            getPlayerHitCircle: getPlayerHitCircle,
+            getEnemyShotBounds: getEnemyShotBounds,
+            handlePlayerDamage: handlePlayerDamage
+        }) : null;
+
+        if (!shotRuntime) {
+            throw new Error('FlubberShotRuntime module is required to update shots');
+        }
 
         playerEntityFactory = window.FlubberPlayerEntity ? window.FlubberPlayerEntity.create({
             getPlayerSpriteImage: function () {
@@ -1561,19 +1593,13 @@ var game = (function () {
 
         updateEnemies();
 
-        for (var j = 0; j < playerShotsBuffer.length; j++) {
-            var disparoBueno = playerShotsBuffer[j];
-            updatePlayerShot(disparoBueno, j);
-        }
+        shotRuntime.updatePlayerShots();
 
         if (!player.dead && isAnyEnemyHittingPlayer()) {
             handlePlayerDamage('contact');
         }
 
-        for (var i = 0; i < evilShotsBuffer.length; i++) {
-            var evilShot = evilShotsBuffer[i];
-            updateEvilShot(evilShot, i);
-        }
+        shotRuntime.updateEnemyShots();
 
         if (debugHitboxes) {
             drawDebugHitboxes();
@@ -1587,68 +1613,6 @@ var game = (function () {
         showLifeAndScore();
 
         playerAction();
-    }
-
-    function updatePlayerShot(playerShot, id) {
-        if (playerShot) {
-            playerShot.identifier = id;
-            if (playerShot.isHoming && !(playerShot.vx || 0)) {
-                steerPlayerShot(playerShot);
-            }
-            var collisionResult = checkCollisions(playerShot);
-            if (collisionResult === true || collisionResult === 'keep') {
-                if (isPlayerShotInBounds(playerShot)) {
-                    movePlayerShot(playerShot);
-                    drawPlayerShot(playerShot);
-                } else {
-                    playerShot.deleteShot(parseInt(playerShot.identifier));
-                }
-            }
-        }
-    }
-
-    function movePlayerShot(playerShot) {
-        var vx = typeof playerShot.vx === 'number' ? playerShot.vx : 0;
-        var vy = typeof playerShot.vy === 'number' ? playerShot.vy : -playerShot.speed;
-        playerShot.posX += vx;
-        playerShot.posY += vy;
-    }
-
-    function isPlayerShotInBounds(playerShot) {
-        var width = Math.max(10, Math.round(10 * (playerShot.scale || 1)));
-        var height = Math.max(18, Math.round(20 * (playerShot.scale || 1)));
-        return playerShot.posY > -height &&
-            playerShot.posX > -width &&
-            playerShot.posX < (canvas.width + width);
-    }
-
-    function updateEvilShot(evilShot, id) {
-        if (evilShot) {
-            evilShot.identifier = id;
-            if (!player.dead && circleRectOverlap(getPlayerHitCircle(), getEnemyShotBounds(evilShot))) {
-                evilShot.deleteShot(parseInt(evilShot.identifier));
-                handlePlayerDamage('projectile');
-                return;
-            }
-
-            if (player.dead || !circleRectOverlap(getPlayerHitCircle(), getEnemyShotBounds(evilShot))) {
-                var vx = typeof evilShot.vx === 'number' ? evilShot.vx : 0;
-                var vy = typeof evilShot.vy === 'number' ? evilShot.vy : evilShot.speed;
-                if (evilShot.waveMotion) {
-                    evilShot.waveBaseX = (typeof evilShot.waveBaseX === 'number' ? evilShot.waveBaseX : evilShot.posX) + vx;
-                    evilShot.wavePhase = (evilShot.wavePhase || 0) + (evilShot.waveFrequency || 0.5);
-                    evilShot.posX = evilShot.waveBaseX + Math.sin(evilShot.wavePhase) * (evilShot.waveAmplitude || 8);
-                } else {
-                    evilShot.posX += vx;
-                }
-                evilShot.posY += vy;
-                if (evilShot.posY <= canvas.height && evilShot.posX >= -40 && evilShot.posX <= (canvas.width + 40)) {
-                    bufferctx.drawImage(evilShot.image, evilShot.posX, evilShot.posY);
-                } else {
-                    evilShot.deleteShot(parseInt(evilShot.identifier));
-                }
-            }
-        }
     }
 
     function drawBackground() {
@@ -1722,12 +1686,6 @@ var game = (function () {
             return (nearestEnemy.posX + (nearestEnemy.spriteWidth / 2)) >= playerShot.posX ? horizontalSpeed : -horizontalSpeed;
         }
         return getRandomNumber(2) === 0 ? -horizontalSpeed : horizontalSpeed;
-    }
-
-    function drawPlayerShot(playerShot) {
-        var width = Math.max(10, Math.round(10 * (playerShot.scale || 1)));
-        var height = Math.max(18, Math.round(20 * (playerShot.scale || 1)));
-        bufferctx.drawImage(playerShot.image, playerShot.posX - (width / 2), playerShot.posY, width, height);
     }
 
     function handlePlayerDamage(source) {
