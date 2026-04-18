@@ -239,11 +239,61 @@ var game = (function () {
         playerKilledImage.src = 'images/bueno_muerto.png';
 
     }
+    function resetGameState() {
+        // Reset level and game progress
+        currentLevel = 1;
+        currentProgressLevel = 1;
+        currentStageType = 'normal';
+        stageState = 'countdown';
+        stageMessage = '';
+        stageTransitionUntil = 0;
+        activeStageConfig = null;
+        pendingStageSpawns = 0;
+        spawnedStageEnemies = 0;
+        
+        // Reset game status
+        youLoose = false;
+        congratulations = false;
+        
+        // Reset pause state
+        isPaused = false;
+        pausedStageState = '';
+        pauseStartedAt = 0;
+        
+        // Clear active entities
+        activeEnemies = [];
+        bossBombs = [];
+        playerShotsBuffer = [];
+        evilShotsBuffer = [];
+        nextPlayerShot = 0;
+        now = 0;
+        playerNamePendingSave = false;
+        playerNameInputConfirmed = false;
+        playerNameInputBuffer = '';
+        playerNameInputCursorBlink = 0;
+        
+        // Reset upgrades
+        resetRunUpgrades();
+        refreshPlayerStats();
+
+        // Player se crea fuera de esta funcion cuando el canvas ya esta listo.
+        playerShot = null;
+
+    }
+
+    function restartGame() {
+        resetGameState();
+        loadDebugStartConfigFromUrl();
+        applyDebugStartConfig();
+        player = new Player(playerLife, 0);
+        applyDebugRewardsForTest();
+        startCountdown('Nivel ' + currentLevel);
+        showLifeAndScore();
+    }
     function init() {
 
         preloadImages();
-        resetRunUpgrades();
-        refreshPlayerStats();
+        resetGameState();
 
         migrateLegacyScoresIfNeeded();
         showBestScores();
@@ -2685,6 +2735,12 @@ var game = (function () {
     function keyDown(e) {
         var key = (window.event ? e.keyCode : e.which);
 
+        if (key === 82) { // R - Reiniciar siempre
+            restartGame();
+            e.preventDefault();
+            return;
+        }
+
         if (key === 80) { // P
             if (isPaused) {
                 resumeGame();
@@ -2696,9 +2752,6 @@ var game = (function () {
         }
 
         if (isPaused) {
-            if (key === 82) { // R
-                restartGameFromPause();
-            }
             e.preventDefault();
             return;
         }
@@ -2879,7 +2932,7 @@ var game = (function () {
             outlineColor: arcadeTheme.outline,
             outlineWidth: 3
         });
-        drawArcadeText('PULSA F5 PARA REINTENTAR', centerX, centerY + 66, {
+        drawArcadeText('PULSA R PARA REINTENTAR', centerX, centerY + 66, {
             color: '#ffd9a0',
             font: "bold 13px 'Courier New', monospace",
             align: 'center',
