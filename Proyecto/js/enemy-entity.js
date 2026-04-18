@@ -2,6 +2,20 @@ window.FlubberEnemyEntity = (function () {
     function create(options) {
         options = options || {};
 
+        function getBossLevelOneConfig() {
+            return options.getBossLevelOneConfig ? options.getBossLevelOneConfig() : {};
+        }
+
+        function getRandomInRange(min, max) {
+            if (typeof min !== 'number' || typeof max !== 'number') {
+                return 1000;
+            }
+            if (max <= min) {
+                return min;
+            }
+            return min + options.getRandomNumber((max - min) + 1);
+        }
+
         function moveTowards(enemy, targetX, targetY, speed) {
             var deltaX = targetX - enemy.posX;
             var deltaY = targetY - enemy.posY;
@@ -85,7 +99,9 @@ window.FlubberEnemyEntity = (function () {
                 sentinelFanShots: 5,
                 sentinelFanSpread: 1.7,
                 enemyType: 1,
-                pointsToKill: 5
+                pointsToKill: 5,
+                isBossLevelOne: false,
+                bossCombat: null
             };
 
             enemy.image = enemyImages.animation[enemy.fixedSpriteIndex !== null ? enemy.fixedSpriteIndex : 0];
@@ -357,7 +373,84 @@ window.FlubberEnemyEntity = (function () {
                 }, options.getRandomNumber(3000));
             }
 
+            function getWeaponBounds(weapon) {
+                return {
+                    left: enemy.posX + weapon.offsetX,
+                    top: enemy.posY + weapon.offsetY,
+                    right: enemy.posX + weapon.offsetX + weapon.width,
+                    bottom: enemy.posY + weapon.offsetY + weapon.height
+                };
+            }
+
+            function createBossWeaponShot(originX, originY, vx, vy, diagonal) {
+                var bossConfig = getBossLevelOneConfig();
+                var shot = options.createEvilShot(originX, originY);
+                shot.vx = vx;
+                shot.vy = vy;
+                if (diagonal) {
+                    shot.isBossDiagonalShot = true;
+                    shot.bounceCount = 0;
+                    shot.maxBounces = Math.max(1, bossConfig.diagonalMaxBounces || 2);
+                    shot.bounceAcceleration = bossConfig.diagonalBounceAcceleration || 1.15;
+                    shot.maxSpeed = Math.max(4.5, bossConfig.diagonalMaxSpeed || 7.5);
+                }
+                shot.add();
+            }
+
+            function shootBossLevelOnePattern() {
+                if (!enemy.isBossLevelOne || !enemy.bossCombat) {
+                    return;
+                }
+                if (enemy.dead || options.getStageState() !== 'playing') {
+                    return;
+                }
+
+                var bossConfig = getBossLevelOneConfig();
+                var combat = enemy.bossCombat;
+                var weaponPairs = combat.weaponPairs || [];
+                if (!weaponPairs.length) {
+                    return;
+                }
+
+                var pair = weaponPairs[combat.activePairIndex % weaponPairs.length];
+                var baseSpeed = Math.max(2.2, bossConfig.projectileSpeed || 3.8);
+                var spread = bossConfig.fanSpreadRadians || 0.52;
+                var diagonalSpeed = baseSpeed * (bossConfig.diagonalSpeedFactor || 0.95);
+                var firedAny = false;
+
+                for (var p = 0; p < pair.length; p++) {
+                    var weaponIndex = pair[p];
+                    var weapon = combat.weapons[weaponIndex];
+                    if (!weapon || weapon.destroyed) {
+                        continue;
+                    }
+                    var bounds = getWeaponBounds(weapon);
+                    var centerX = Math.round(bounds.left + ((bounds.right - bounds.left) / 2) - 5);
+                    var baseY = Math.round(bounds.bottom);
+
+                    createBossWeaponShot(centerX, baseY, 0, baseSpeed, false);
+                    createBossWeaponShot(centerX, baseY, -Math.sin(spread) * diagonalSpeed, Math.cos(spread) * diagonalSpeed, true);
+                    createBossWeaponShot(centerX, baseY, Math.sin(spread) * diagonalSpeed, Math.cos(spread) * diagonalSpeed, true);
+                    firedAny = true;
+                }
+
+                if (!firedAny) {
+                    return;
+                }
+                combat.activePairIndex = (combat.activePairIndex + 1) % weaponPairs.length;
+
+                if (!enemy.dead && options.getStageState() === 'playing') {
+                    enemy.shotTimeoutId = setTimeout(function () {
+                        shoot();
+                    }, getRandomInRange(bossConfig.shootDelayMin || 800, bossConfig.shootDelayMax || 1300));
+                }
+            }
+
             function shoot() {
+                if (enemy.isBossLevelOne) {
+                    shootBossLevelOnePattern();
+                    return;
+                }
                 if (enemy.enemyType === 3 || enemy.enemyType === 5) {
                     return;
                 }
@@ -404,6 +497,44 @@ window.FlubberEnemyEntity = (function () {
                 if (enemy.slowUntil && new Date().getTime() < enemy.slowUntil) {
                     speedMultiplier = 0.6;
                     movementSpeed = movementSpeed * speedMultiplier;
+                }
+                if (enemy.isBossLevelOne && enemy.bossCombat) {
+                    var bossConfig = getBossLevelOneConfig();
+                    if (enemy.posY < enemy.bossCombat.entryY) {
+                        enemy.posY += Math.max(0.8, movementSpeed);
+                        if (enemy.posY > enemy.bossCombat.entryY) {
+                            enemy.posY = enemy.bossCombat.entryY;
+                        }
+                    } else {
+                        var horizontalSpeed = Math.max(1.1, movementSpeed * (bossConfig.horizontalSpeedMultiplier || 1.15));
+                        if (enemy.direction === 'D') {
+                            enemy.posX += horizontalSpeed;
+                            if (enemy.posX >= enemy.maxX) {
+                                enemy.posX = enemy.maxX;
+                                enemy.direction = 'I';
+                            }
+                        } else {
+                            enemy.posX -= horizontalSpeed;
+                            if (enemy.posX <= enemy.minX) {
+                                enemy.posX = enemy.minX;
+                                enemy.direction = 'D';
+                            }
+                        }
+                    }
+                    enemy.animation++;
+                    if (enemy.animation > 5) {
+                        enemy.animation = 0;
+                        if (enemy.fixedSpriteIndex === null) {
+                            enemy.imageNumber++;
+                            if (enemy.imageNumber > 8) {
+                                enemy.imageNumber = 1;
+                            }
+                            enemy.image = enemyImages.animation[enemy.imageNumber - 1];
+                        } else {
+                            enemy.image = enemyImages.animation[enemy.fixedSpriteIndex];
+                        }
+                    }
+                    return;
                 }
                 if (enemy.hunterMotion) {
                     updateHunterMovement(movementSpeed, speedMultiplier);
@@ -477,6 +608,10 @@ window.FlubberEnemyEntity = (function () {
                     clearTimeout(enemy.shotTimeoutId);
                     enemy.shotTimeoutId = null;
                 }
+            };
+
+            enemy.triggerShoot = function () {
+                shoot();
             };
 
             enemy.toString = function () {
@@ -566,10 +701,67 @@ window.FlubberEnemyEntity = (function () {
 
         function createFinalBoss(life, shots, speed, spriteIndex, bossLevel, bossImages) {
             var boss = createEnemy(life, shots, bossImages, spriteIndex);
+            var bossLevelOneConfig = getBossLevelOneConfig();
+            var canvasWidth = options.getCanvasWidth();
             boss.speed = speed;
             boss.goDownSpeed = speed / 2;
             boss.bossLevel = bossLevel || 1;
             boss.pointsToKill = 20;
+
+            if (boss.bossLevel === 1) {
+                var spriteWidth = boss.spriteWidth || 40;
+                var spriteHeight = boss.spriteHeight || 40;
+                var layout = bossLevelOneConfig.weaponLayout || [];
+                var fallbackLayout = [
+                    { id: 'weapon-1', xRatio: 0.12, yRatio: 0.2, widthRatio: 0.22, heightRatio: 0.23 },
+                    { id: 'weapon-2', xRatio: 0.66, yRatio: 0.2, widthRatio: 0.22, heightRatio: 0.23 },
+                    { id: 'weapon-3', xRatio: 0.18, yRatio: 0.55, widthRatio: 0.2, heightRatio: 0.24 },
+                    { id: 'weapon-4', xRatio: 0.62, yRatio: 0.55, widthRatio: 0.2, heightRatio: 0.24 }
+                ];
+                var weaponLayout = layout.length ? layout : fallbackLayout;
+                var weaponLife = Math.max(1, life / weaponLayout.length);
+                var weapons = [];
+                for (var i = 0; i < weaponLayout.length; i++) {
+                    var weaponDef = weaponLayout[i];
+                    weapons.push({
+                        id: weaponDef.id || ('weapon-' + (i + 1)),
+                        life: weaponLife,
+                        maxLife: weaponLife,
+                        destroyed: false,
+                        offsetX: Math.round(spriteWidth * weaponDef.xRatio),
+                        offsetY: Math.round(spriteHeight * weaponDef.yRatio),
+                        width: Math.max(10, Math.round(spriteWidth * weaponDef.widthRatio)),
+                        height: Math.max(10, Math.round(spriteHeight * weaponDef.heightRatio))
+                    });
+                }
+
+                var horizontalPadding = Math.max(6, bossLevelOneConfig.horizontalPadding || 18);
+                var initialX = Math.max(horizontalPadding, (canvasWidth / 2) - (spriteWidth / 2));
+                boss.minX = horizontalPadding;
+                boss.maxX = Math.max(boss.minX + 20, canvasWidth - spriteWidth - horizontalPadding);
+                boss.posX = Math.min(boss.maxX, initialX);
+                boss.posY = -spriteHeight - 16;
+                boss.direction = options.getRandomNumber(2) === 0 ? 'D' : 'I';
+                boss.isBossLevelOne = true;
+                boss.bossCombat = {
+                    weapons: weapons,
+                    weaponPairs: bossLevelOneConfig.weaponPairs || [[0, 2], [1, 3]],
+                    activePairIndex: 0,
+                    entryY: Math.max(30, bossLevelOneConfig.entryY || 82),
+                    firstWeaponDestroyedTriggered: false,
+                    secondWeaponDestroyedTriggered: false
+                };
+
+                boss.stopShooting();
+                var initialShootDelay = Math.max(250, bossLevelOneConfig.initialShootDelay || 1100);
+                boss.shotTimeoutId = setTimeout(function () {
+                    boss.shotTimeoutId = null;
+                    if (!boss.dead && options.getStageState() === 'playing' && typeof boss.triggerShoot === 'function') {
+                        boss.triggerShoot();
+                    }
+                }, initialShootDelay);
+            }
+
             return boss;
         }
 

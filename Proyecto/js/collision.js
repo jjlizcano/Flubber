@@ -137,6 +137,32 @@ window.FlubberCollisionSystem = (function () {
         );
     }
 
+    function getBossWeaponBounds(enemy) {
+        if (!enemy || !enemy.bossCombat || !enemy.bossCombat.weapons || !enemy.bossCombat.weapons.length) {
+            return [];
+        }
+
+        var bounds = [];
+        for (var i = 0; i < enemy.bossCombat.weapons.length; i++) {
+            var weapon = enemy.bossCombat.weapons[i];
+            if (!weapon || weapon.destroyed) {
+                continue;
+            }
+            bounds.push({
+                id: weapon.id || ('weapon-' + i),
+                index: i,
+                left: enemy.posX + weapon.offsetX,
+                top: enemy.posY + weapon.offsetY,
+                right: enemy.posX + weapon.offsetX + weapon.width,
+                bottom: enemy.posY + weapon.offsetY + weapon.height,
+                width: weapon.width,
+                height: weapon.height
+            });
+        }
+
+        return bounds;
+    }
+
     function getPlayerShotBounds(shot) {
         var width = Math.max(10, Math.round(10 * (shot.scale || 1)));
         var height = Math.max(18, Math.round(20 * (shot.scale || 1)));
@@ -154,6 +180,7 @@ window.FlubberCollisionSystem = (function () {
         getPlayerHitCircle: getPlayerHitCircle,
         getPlayerBounds: getPlayerBounds,
         getEnemyBounds: getEnemyBounds,
+        getBossWeaponBounds: getBossWeaponBounds,
         getPlayerShotBounds: getPlayerShotBounds,
         getEnemyShotBounds: getEnemyShotBounds
     };

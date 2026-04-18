@@ -54,8 +54,43 @@ window.FlubberGameConfig = {
         5: { spriteIndex: 4, lifeBonus: 4, shotsBonus: 1, speedBonus: 0.00, pointsBonus: 7 }
     },
     bossByLevel: {
-        1: { spriteIndex: 0, lifeBonus: 0, shotsBonus: 0, speedBonus: 0.00, pointsBonus: 0 },
+        1: { spriteIndex: 0, lifeBonus: 24, shotsBonus: 2, speedBonus: 0.00, pointsBonus: 0 },
         2: { spriteIndex: 4, lifeBonus: 4, shotsBonus: 4, speedBonus: 0.10, pointsBonus: 15 }
+    },
+    bossLevelOne: {
+        entryY: 82,
+        horizontalPadding: 18,
+        horizontalSpeedMultiplier: 1.15,
+        shootDelayMin: 800,
+        shootDelayMax: 1300,
+        initialShootDelay: 1100,
+        weaponBonusScore: 8,
+        weaponLayout: [
+            { id: 'weapon-1', xRatio: 0.12, yRatio: 0.20, widthRatio: 0.22, heightRatio: 0.23 },
+            { id: 'weapon-2', xRatio: 0.66, yRatio: 0.20, widthRatio: 0.22, heightRatio: 0.23 },
+            { id: 'weapon-3', xRatio: 0.18, yRatio: 0.55, widthRatio: 0.20, heightRatio: 0.24 },
+            { id: 'weapon-4', xRatio: 0.62, yRatio: 0.55, widthRatio: 0.20, heightRatio: 0.24 }
+        ],
+        weaponPairs: [[0, 2], [1, 3]],
+        fanSpreadRadians: 0.9,
+        projectileSpeed: 3.8,
+        diagonalSpeedFactor: 0.95,
+        diagonalMaxBounces: 4,
+        diagonalBounceAcceleration: 1.2,
+        diagonalMaxSpeed: 8.5,
+        bombSpawnIntervalMs: 2200,
+        bombMaxActive: 3,
+        bombMinY: 36,
+        bombLife: 2,
+        bombProjectileSpeed: 3.4,
+        bombFanSpreadRadians: 0.64,
+        bombBurstShotCount: 3,
+        bombScoreBase: 9,
+        reinforcementIntervalMs: 3200,
+        reinforcementMaxActive: 3,
+        reinforcementLifeBonus: 0,
+        reinforcementShotsBonus: 0,
+        reinforcementSpeedBonus: 0.1
     },
     rewardCatalog: {
         cadence: { id: 'cadence', name: 'Mas cadencia', description: 'Disparas mas rapido', maxStacks: 3, oneTime: false, rarity: 'common' },

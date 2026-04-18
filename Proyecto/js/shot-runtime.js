@@ -68,6 +68,31 @@ window.FlubberShotRuntime = (function () {
 
             var vx = typeof evilShot.vx === 'number' ? evilShot.vx : 0;
             var vy = typeof evilShot.vy === 'number' ? evilShot.vy : evilShot.speed;
+            if (evilShot.isBossDiagonalShot) {
+                var projectedX = evilShot.posX + vx;
+                var minX = 0;
+                var maxX = options.getCanvasWidth() - 10;
+                var hitWall = projectedX <= minX || projectedX >= maxX;
+                if (hitWall) {
+                    var canBounce = (evilShot.bounceCount || 0) < (evilShot.maxBounces || 0);
+                    if (canBounce) {
+                        evilShot.bounceCount = (evilShot.bounceCount || 0) + 1;
+                        var accel = evilShot.bounceAcceleration || 1.12;
+                        var maxSpeed = Math.max(4.5, evilShot.maxSpeed || 7.5);
+                        var nextVx = Math.abs(vx) * accel;
+                        var nextVy = Math.abs(vy) * accel;
+                        evilShot.vx = (projectedX <= minX ? 1 : -1) * Math.min(maxSpeed, nextVx);
+                        evilShot.vy = Math.min(maxSpeed, Math.max(1.5, nextVy));
+                        vx = evilShot.vx;
+                        vy = evilShot.vy;
+                        evilShot.posX = projectedX <= minX ? minX + 1 : maxX - 1;
+                    } else {
+                        evilShot.vx = projectedX <= minX ? Math.abs(vx) : -Math.abs(vx);
+                        vx = evilShot.vx;
+                        evilShot.posX = projectedX <= minX ? minX + 1 : maxX - 1;
+                    }
+                }
+            }
             if (evilShot.waveMotion) {
                 evilShot.waveBaseX = (typeof evilShot.waveBaseX === 'number' ? evilShot.waveBaseX : evilShot.posX) + vx;
                 evilShot.wavePhase = (evilShot.wavePhase || 0) + (evilShot.waveFrequency || 0.5);
