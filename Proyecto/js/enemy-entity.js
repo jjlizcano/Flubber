@@ -443,61 +443,43 @@ window.FlubberEnemyEntity = (function () {
 
                 var bossConfig = getBossLevelOneConfig();
                 var combat = enemy.bossCombat;
-                var weaponPairs = combat.weaponPairs || [];
-                if (!weaponPairs.length) {
+                var weapons = combat.weapons || [];
+                if (!weapons.length) {
                     return;
                 }
 
-                var pair = null;
-                var pairIndex = combat.activePairIndex % weaponPairs.length;
-                for (var pairTry = 0; pairTry < weaponPairs.length; pairTry++) {
-                    var candidateIndex = (pairIndex + pairTry) % weaponPairs.length;
-                    var candidate = weaponPairs[candidateIndex];
-                    var hasActiveWeapon = false;
-                    for (var candidateWeapon = 0; candidateWeapon < candidate.length; candidateWeapon++) {
-                        var candidateWeaponIndex = candidate[candidateWeapon];
-                        var candidateWeaponState = combat.weapons[candidateWeaponIndex];
-                        if (candidateWeaponState && !candidateWeaponState.destroyed) {
-                            hasActiveWeapon = true;
-                            break;
-                        }
-                    }
-                    if (hasActiveWeapon) {
-                        pair = candidate;
-                        pairIndex = candidateIndex;
+                var selectedWeaponIndex = -1;
+                var sequenceStartIndex = combat.activeWeaponIndex % weapons.length;
+                for (var weaponTry = 0; weaponTry < weapons.length; weaponTry++) {
+                    var candidateWeaponIndex = (sequenceStartIndex + weaponTry) % weapons.length;
+                    var candidateWeapon = weapons[candidateWeaponIndex];
+                    if (candidateWeapon && !candidateWeapon.destroyed) {
+                        selectedWeaponIndex = candidateWeaponIndex;
                         break;
                     }
                 }
 
-                if (!pair) {
+                if (selectedWeaponIndex === -1) {
                     return;
                 }
 
                 var baseSpeed = Math.max(2.2, bossConfig.projectileSpeed || 3.8);
                 var spread = bossConfig.fanSpreadRadians || 0.52;
                 var diagonalSpeed = baseSpeed * (bossConfig.diagonalSpeedFactor || 0.95);
-                var firedAny = false;
-
-                for (var p = 0; p < pair.length; p++) {
-                    var weaponIndex = pair[p];
-                    var weapon = combat.weapons[weaponIndex];
-                    if (!weapon || weapon.destroyed) {
-                        continue;
-                    }
-                    var bounds = getWeaponBounds(weapon);
-                    var centerX = Math.round(bounds.left + ((bounds.right - bounds.left) / 2) - 5);
-                    var baseY = Math.round(bounds.bottom);
-
-                    createBossWeaponShot(centerX, baseY, 0, baseSpeed, false);
-                    createBossWeaponShot(centerX, baseY, -Math.sin(spread) * diagonalSpeed, Math.cos(spread) * diagonalSpeed, true);
-                    createBossWeaponShot(centerX, baseY, Math.sin(spread) * diagonalSpeed, Math.cos(spread) * diagonalSpeed, true);
-                    firedAny = true;
-                }
-
-                if (!firedAny) {
+                var selectedWeapon = weapons[selectedWeaponIndex];
+                if (!selectedWeapon || selectedWeapon.destroyed) {
                     return;
                 }
-                combat.activePairIndex = (pairIndex + 1) % weaponPairs.length;
+
+                var bounds = getWeaponBounds(selectedWeapon);
+                var centerX = Math.round(bounds.left + ((bounds.right - bounds.left) / 2) - 5);
+                var baseY = Math.round(bounds.bottom);
+
+                createBossWeaponShot(centerX, baseY, 0, baseSpeed, false);
+                createBossWeaponShot(centerX, baseY, -Math.sin(spread) * diagonalSpeed, Math.cos(spread) * diagonalSpeed, true);
+                createBossWeaponShot(centerX, baseY, Math.sin(spread) * diagonalSpeed, Math.cos(spread) * diagonalSpeed, true);
+
+                combat.activeWeaponIndex = (selectedWeaponIndex + 1) % weapons.length;
 
                 if (!enemy.dead && options.getStageState() === 'playing') {
                     enemy.shotTimeoutId = setTimeout(function () {
@@ -809,8 +791,7 @@ window.FlubberEnemyEntity = (function () {
                 boss.isBossLevelOne = true;
                 boss.bossCombat = {
                     weapons: weapons,
-                    weaponPairs: bossLevelOneConfig.weaponPairs || [[0, 2], [1, 3]],
-                    activePairIndex: 0,
+                    activeWeaponIndex: 0,
                     entryY: Math.max(30, bossLevelOneConfig.entryY || 82),
                     firstWeaponDestroyedTriggered: false,
                     secondWeaponDestroyedTriggered: false

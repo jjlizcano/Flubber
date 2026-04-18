@@ -111,7 +111,6 @@ window.FlubberGameConfig = {
             { id: 'weapon-3', xRatio: -0.3, yRatio: 0.6, widthRatio: 0.4, heightRatio: 0.4 },
             { id: 'weapon-4', xRatio: 0.6, yRatio: 0.6, widthRatio: 0.4, heightRatio: 0.4 }
         ],
-        weaponPairs: [[0, 2], [1, 3]],
         fanSpreadRadians: 0.82,
         projectileSpeed: 3.6,
         diagonalSpeedFactor: 0.95,
