@@ -66,7 +66,7 @@ var game = (function () {
         minHorizontalOffset = 100,
         maxHorizontalOffset = 400,
         activeEnemies = [],
-        totalBestScoresToShow = 5, // las mejores puntuaciones que se mostraran
+        totalBestScoresToShow = 10, // las mejores puntuaciones que se mostraran
         playerShotsBuffer = [],
         evilShotsBuffer = [],
         evilShotImage,
@@ -166,6 +166,15 @@ var game = (function () {
     var playerEffectiveSpeed = playerSpeed;
     var maxPlayerLife = 5;
     var fogueoPulseInterval = 7000;
+    var scoreHistoryStorageKey = 'flubber_score_history_v2';
+    var scoreHistoryStorageLimit = 200;
+    var playerNameInputBuffer = '';
+    var playerNameInputCursorBlink = 0;
+    var playerNameInputConfirmed = false;
+    var playerNamePendingSave = false;
+    var playerNamePendingSave = false;
+    var playerNameStorageKey = 'flubber_player_name';
+    var legacyScoreDatePattern = /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}$/;
     var debugRewardsForTest = [];
     var debugStartConfig = {
         enabled: false,
@@ -232,6 +241,7 @@ var game = (function () {
         resetRunUpgrades();
         refreshPlayerStats();
 
+        migrateLegacyScoresIfNeeded();
         showBestScores();
 
         canvas = document.getElementById('canvas');
@@ -958,6 +968,10 @@ var game = (function () {
 
     function shouldOpenRewardSelector() {
         if (currentStageType === 'boss') {
+            // No abrir selector de recompensas para el último boss
+            if (currentLevel === totalLevels) {
+                return false;
+            }
             return true;
         }
         return currentStageType === 'normal' && currentPhase % 2 === 0;
@@ -1112,8 +1126,11 @@ var game = (function () {
     function completeStageClear() {
         if (currentStageType === 'boss') {
             if (currentLevel === totalLevels) {
-                saveFinalScore();
-                congratulations = true;
+                // Solicitar nombre antes de guardar
+                playerNameInputBuffer = getStoredPlayerName();
+                playerNameInputConfirmed = false;
+                playerNamePendingSave = true;
+                stageState = 'name_input_pending';
                 clearStageEntities();
                 return;
             }
@@ -1285,13 +1302,26 @@ var game = (function () {
 
         player.doAnything = function() {
             var initialPosX = player.posX;
+            var moveDirection = 0;
 
             if (player.dead)
                 return;
-            if (keyPressed.left && player.posX > 5)
-                player.posX -= player.speed;
-            if (keyPressed.right && player.posX < (canvas.width - player.width - 5))
-                player.posX += player.speed;
+            if (keyPressed.left && !keyPressed.right) {
+                moveDirection = -1;
+            } else if (keyPressed.right && !keyPressed.left) {
+                moveDirection = 1;
+            }
+
+            if (moveDirection !== 0) {
+                player.posX += moveDirection * player.speed;
+            }
+
+            if (player.posX < 5) {
+                player.posX = 5;
+            } else if (player.posX > (canvas.width - player.width - 5)) {
+                player.posX = canvas.width - player.width - 5;
+            }
+
             if (keyPressed.fire)
                 shoot();
 
@@ -1316,7 +1346,11 @@ var game = (function () {
                 }, 500);
 
             } else {
-                saveFinalScore();
+                // Solicitar nombre antes de guardar
+                playerNameInputBuffer = getStoredPlayerName();
+                playerNameInputConfirmed = false;
+                playerNamePendingSave = true;
+                stageState = 'name_input_pending';
                 clearStageEntities();
                 youLoose = true;
             }
@@ -1799,7 +1833,7 @@ var game = (function () {
             if (enemy.enemyType === 3 || enemy.enemyType === 5) {
                 return;
             }
-            if (enemy.shots > 0 && !enemy.dead && stageState === 'playing') {
+            if (!enemy.dead && stageState === 'playing') {
                 var centerX = enemy.posX + (enemy.image.width / 2) - 5;
                 var baseY = enemy.posY + enemy.image.height;
                 if (enemy.enemyType === 2) {
@@ -1823,7 +1857,6 @@ var game = (function () {
                     var disparo = new EvilShot(centerX, baseY);
                     disparo.add();
                 }
-                enemy.shots --;
                 enemy.shotTimeoutId = setTimeout(function() {
                     shoot(enemy);
                 }, getRandomNumber(3000));
@@ -2032,6 +2065,38 @@ var game = (function () {
     function keyDown(e) {
         var key = (window.event ? e.keyCode : e.which);
 
+        if (stageState === 'name_input_pending') {
+            if (key === 13) { // ENTER
+                playerNameInputConfirmed = true;
+                e.preventDefault();
+                return;
+            }
+            if (key === 27) { // ESC - cancelar
+                playerNameInputConfirmed = true;
+                playerNameInputBuffer = getStoredPlayerName();
+                e.preventDefault();
+                return;
+            }
+            if (key === 8) { // Backspace
+                if (playerNameInputBuffer.length > 0) {
+                    playerNameInputBuffer = playerNameInputBuffer.substring(0, playerNameInputBuffer.length - 1);
+                }
+                e.preventDefault();
+                return;
+            }
+            // Caracteres alfanuméricos y espacio (32 es espacio)
+            var char = String.fromCharCode(key).toUpperCase();
+            if ((key >= 48 && key <= 57) || (key >= 65 && key <= 90) || key === 32) {
+                if (playerNameInputBuffer.length < 12) {
+                    playerNameInputBuffer += char;
+                }
+                e.preventDefault();
+                return;
+            }
+            e.preventDefault();
+            return;
+        }
+
         if (stageState === 'reward_pending') {
             if (key === keyMap.left) {
                 rewardSelectedIndex = 0;
@@ -2072,6 +2137,86 @@ var game = (function () {
         ctx.drawImage(buffer, 0, 0);
     }
 
+    function drawNameInput() {
+        var centerX = canvas.width / 2;
+        var centerY = canvas.height / 2;
+        var panelHeight = 200;
+        
+        drawArcadePanel(60, centerY - 100, canvas.width - 120, panelHeight, 0.92, 'rgba(100, 150, 255, 0.9)');
+        
+        drawArcadeText('INGRESA TU NOMBRE', centerX, centerY - 60, {
+            color: '#fff3a3',
+            font: "bold 20px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(150, 200, 255, 0.95)',
+            glowBlur: 10,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 3
+        });
+        
+        // Cursor parpadeante
+        playerNameInputCursorBlink = (playerNameInputCursorBlink + 1) % 60;
+        var showCursor = playerNameInputCursorBlink < 30;
+        
+        var displayText = playerNameInputBuffer;
+        if (showCursor) {
+            displayText += '_';
+        } else if (playerNameInputBuffer.length < 12) {
+            displayText += ' ';
+        }
+        
+        drawArcadeText(displayText, centerX, centerY - 5, {
+            color: '#ffff00',
+            font: "bold 18px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 255, 100, 0.8)',
+            glowBlur: 8,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
+        
+        drawArcadeText('MAX 12 CARACTERES', centerX, centerY + 40, {
+            color: '#ffcf63',
+            font: "bold 11px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 180, 0, 0.7)',
+            glowBlur: 5,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
+        
+        drawArcadeText('ENTER = Confirmar  |  ESC = Cancelar', centerX, centerY + 70, {
+            color: '#ffcf63',
+            font: "bold 11px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 180, 0, 0.7)',
+            glowBlur: 5,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
+        
+        // Procesar si está confirmado
+        if (playerNameInputConfirmed) {
+            playerNameInputConfirmed = false;
+            var normalized = normalizePlayerName(playerNameInputBuffer);
+            if (isStorageAvailable()) {
+                localStorage.setItem(playerNameStorageKey, normalized);
+            }
+            if (playerNamePendingSave) {
+                playerNamePendingSave = false;
+                saveFinalScore();
+                if (youLoose) {
+                    // Derrota: cambiar estado para que se muestre GAME OVER
+                    stageState = 'game_over_display';
+                } else {
+                    // Victoria: mostrar pantalla de congratulaciones
+                    congratulations = true;
+                    stageState = 'finished';
+                }
+            }
+        }
+    }
+
     function showGameOver() {
         var centerX = canvas.width / 2;
         var centerY = canvas.height / 2;
@@ -2099,8 +2244,12 @@ var game = (function () {
     function showCongratulations () {
         var centerX = canvas.width / 2;
         var centerY = canvas.height / 2;
-        drawArcadePanel(70, centerY - 120, canvas.width - 140, 240, 0.92, 'rgba(255, 208, 77, 0.9)');
-        drawArcadeText('VICTORIA TOTAL', centerX, centerY - 70, {
+        var baseScore = player.score;
+        var lifeBonus = player.life * 10;
+        var totalScore = getTotalScore();
+        
+        drawArcadePanel(70, centerY - 130, canvas.width - 140, 260, 0.92, 'rgba(255, 208, 77, 0.9)');
+        drawArcadeText('VICTORIA TOTAL', centerX, centerY - 80, {
             color: arcadeTheme.successText,
             font: arcadeTheme.titleFont,
             align: 'center',
@@ -2109,25 +2258,25 @@ var game = (function () {
             outlineColor: arcadeTheme.outline,
             outlineWidth: 4
         });
-        drawArcadeText('PUNTOS ' + player.score, centerX, centerY - 20, {
+        drawArcadeText('PUNTOS ' + baseScore, centerX, centerY - 25, {
             color: '#ffe680',
-            font: "bold 18px 'Courier New', monospace",
+            font: "bold 16px 'Courier New', monospace",
             align: 'center',
             glowColor: arcadeTheme.glow,
             glowBlur: 7,
             outlineColor: arcadeTheme.outline,
             outlineWidth: 3
         });
-        drawArcadeText('VIDAS ' + player.life + ' x 5', centerX, centerY + 20, {
+        drawArcadeText('BONO VIDAS ' + player.life + ' x 10 = ' + lifeBonus, centerX, centerY + 10, {
             color: '#ffcf63',
-            font: "bold 18px 'Courier New', monospace",
+            font: "bold 16px 'Courier New', monospace",
             align: 'center',
             glowColor: 'rgba(255, 120, 0, 0.8)',
             glowBlur: 6,
             outlineColor: arcadeTheme.outline,
             outlineWidth: 3
         });
-        drawArcadeText('TOTAL ' + getTotalScore(), centerX, centerY + 62, {
+        drawArcadeText('TOTAL ' + totalScore, centerX, centerY + 55, {
             color: '#fff3a3',
             font: "bold 21px 'Courier New', monospace",
             align: 'center',
@@ -2139,13 +2288,18 @@ var game = (function () {
     }
 
     function getTotalScore() {
-        return player.score + player.life * 5;
+        return player.score + player.life * 10;
     }
 
     function update() {
 
         drawBackground();
         updateRewardEffects();
+
+        if (stageState === 'name_input_pending') {
+            drawNameInput();
+            return;
+        }
 
         if (stageState === 'reward_pending') {
             drawRewardSelector();
@@ -2155,6 +2309,11 @@ var game = (function () {
 
         if (congratulations) {
             showCongratulations();
+            return;
+        }
+
+        if (stageState === 'game_over_display') {
+            showGameOver();
             return;
         }
 
@@ -2175,6 +2334,8 @@ var game = (function () {
             }
             return;
         }
+
+        playerAction();
 
         if (player.updateVisualFeedback) {
             player.updateVisualFeedback();
@@ -2215,8 +2376,6 @@ var game = (function () {
         }
 
         showLifeAndScore();
-
-        playerAction();
     }
 
     function updatePlayerShot(playerShot, id) {
@@ -2415,19 +2574,10 @@ var game = (function () {
 
     /******************************* MEJORES PUNTUACIONES (LOCALSTORAGE) *******************************/
     function saveFinalScore() {
-        localStorage.setItem(getFinalScoreDate(), getTotalScore());
+        var history = loadScoreHistory();
+        history.push(buildCurrentScoreRecord());
+        saveScoreHistory(history);
         showBestScores();
-        removeNoBestScores();
-    }
-
-    function getFinalScoreDate() {
-        var date = new Date();
-        return fillZero(date.getDay()+1)+'/'+
-            fillZero(date.getMonth()+1)+'/'+
-            date.getFullYear()+' '+
-            fillZero(date.getHours())+':'+
-            fillZero(date.getMinutes())+':'+
-            fillZero(date.getSeconds());
     }
 
     function fillZero(number) {
@@ -2437,46 +2587,217 @@ var game = (function () {
         return number;
     }
 
-    function getBestScoreKeys() {
-        var bestScores = getAllScores();
-        bestScores.sort(function (a, b) {return b - a;});
-        bestScores = bestScores.slice(0, totalBestScoresToShow);
-        var bestScoreKeys = [];
-        for (var j = 0; j < bestScores.length; j++) {
-            var score = bestScores[j];
-            for (var i = 0; i < localStorage.length; i++) {
-                var key = localStorage.key(i);
-                if (parseInt(localStorage.getItem(key)) == score) {
-                    bestScoreKeys.push(key);
-                }
-            }
+    function isStorageAvailable() {
+        try {
+            var testKey = '__flubber_storage_test__';
+            localStorage.setItem(testKey, '1');
+            localStorage.removeItem(testKey);
+            return true;
+        } catch (error) {
+            return false;
         }
-        return bestScoreKeys.slice(0, totalBestScoresToShow);
     }
 
-    function getAllScores() {
-        var all = [];
-        for (var i=0; i < localStorage.length; i++) {
-            all[i] = (localStorage.getItem(localStorage.key(i)));
+    function normalizeNumber(value, fallbackValue) {
+        var parsed = parseInt(value, 10);
+        if (isNaN(parsed)) {
+            return fallbackValue;
         }
-        return all;
+        return parsed;
+    }
+
+    function normalizePlayerName(name) {
+        var normalized = (name || '').toString().replace(/\s+/g, ' ').replace(/[<>]/g, '').trim();
+        if (!normalized) {
+            normalized = 'Anonimo';
+        }
+        return normalized.substring(0, 24);
+    }
+
+    function normalizeRecord(record) {
+        if (!record || typeof record !== 'object') {
+            return null;
+        }
+
+        var id = record.id;
+
+        if (!id) {
+            id = new Date().getTime() + '_' + Math.floor(Math.random() * 1000000);
+        }
+
+        return {
+            id: id,
+            playerName: normalizePlayerName(record.playerName),
+            score: Math.max(0, normalizeNumber(record.score, 0))
+        };
+    }
+
+    function sortScoreRecordsDescending(records) {
+        records.sort(function (first, second) {
+            if (second.score !== first.score) {
+                return second.score - first.score;
+            }
+
+            if (first.id < second.id) {
+                return 1;
+            }
+            if (first.id > second.id) {
+                return -1;
+            }
+            return 0;
+        });
+
+        return records;
+    }
+
+    function normalizeScoreHistory(history) {
+        if (!history || !history.length) {
+            return [];
+        }
+
+        var normalized = [];
+        for (var i = 0; i < history.length; i++) {
+            var normalizedRecord = normalizeRecord(history[i]);
+            if (normalizedRecord) {
+                normalized.push(normalizedRecord);
+            }
+        }
+
+        return sortScoreRecordsDescending(normalized);
+    }
+
+    function loadScoreHistory() {
+        if (!isStorageAvailable()) {
+            return [];
+        }
+
+        var stored = localStorage.getItem(scoreHistoryStorageKey);
+        if (!stored) {
+            return [];
+        }
+
+        try {
+            var parsed = JSON.parse(stored);
+            if (!Array.isArray(parsed)) {
+                return [];
+            }
+            return normalizeScoreHistory(parsed);
+        } catch (error) {
+            return [];
+        }
+    }
+
+    function saveScoreHistory(history) {
+        if (!isStorageAvailable()) {
+            return;
+        }
+
+        var normalized = normalizeScoreHistory(history);
+        if (normalized.length > scoreHistoryStorageLimit) {
+            normalized = normalized.slice(0, scoreHistoryStorageLimit);
+        }
+
+        try {
+            localStorage.setItem(scoreHistoryStorageKey, JSON.stringify(normalized));
+        } catch (error) {
+            // Si no hay espacio en Local Storage no se interrumpe el juego.
+        }
+    }
+
+    function isLegacyScoreEntry(key, value) {
+        if (!legacyScoreDatePattern.test(key || '')) {
+            return false;
+        }
+
+        var scoreValue = parseInt(value, 10);
+        return !isNaN(scoreValue);
+    }
+
+    function migrateLegacyScoresIfNeeded() {
+        if (!isStorageAvailable()) {
+            return;
+        }
+
+        var existingHistory = loadScoreHistory();
+        var migratedRecords = [];
+        var keysToRemove = [];
+
+        for (var i = 0; i < localStorage.length; i++) {
+            var key = localStorage.key(i);
+            if (!key || key === scoreHistoryStorageKey || key === playerNameStorageKey) {
+                continue;
+            }
+
+            var value = localStorage.getItem(key);
+            if (!isLegacyScoreEntry(key, value)) {
+                continue;
+            }
+
+            migratedRecords.push({
+                id: 'legacy_' + i + '_' + key,
+                playerName: 'Anonimo',
+                score: normalizeNumber(value, 0)
+            });
+            keysToRemove.push(key);
+        }
+
+        if (!migratedRecords.length) {
+            return;
+        }
+
+        saveScoreHistory(existingHistory.concat(migratedRecords));
+
+        for (var j = 0; j < keysToRemove.length; j++) {
+            localStorage.removeItem(keysToRemove[j]);
+        }
+    }
+
+    function getStoredPlayerName() {
+        if (!isStorageAvailable()) {
+            return 'Anonimo';
+        }
+        return normalizePlayerName(localStorage.getItem(playerNameStorageKey));
+    }
+
+    function getPlayerNameForRecord() {
+        var normalized = normalizePlayerName(playerNameInputBuffer);
+        return normalized;
+    }
+
+    function buildCurrentScoreRecord() {
+        return {
+            id: new Date().getTime() + '_' + Math.floor(Math.random() * 1000000),
+            playerName: getPlayerNameForRecord(),
+            score: Math.max(0, normalizeNumber(getTotalScore(), 0))
+        };
+    }
+
+    function getBestScoreRecords() {
+        var history = loadScoreHistory();
+        return history.slice(0, totalBestScoresToShow);
     }
 
     function showBestScores() {
-        var bestScores = getBestScoreKeys();
+        var bestScores = getBestScoreRecords();
         var bestScoresList = document.getElementById('puntuaciones');
         if (bestScoresList) {
             clearList(bestScoresList);
             for (var i=0; i < bestScores.length; i++) {
-                addListElement(bestScoresList, bestScores[i], i==0?'negrita':null);
-                addListElement(bestScoresList, localStorage.getItem(bestScores[i]), i==0?'negrita':null);
+                var rowClassName = i === 0 ? 'negrita' : null;
+                addListElement(bestScoresList, bestScores[i].playerName, rowClassName);
+                addListElement(bestScoresList, bestScores[i].score, rowClassName);
+            }
+
+            if (!bestScores.length) {
+                addListElement(bestScoresList, 'Sin datos');
+                addListElement(bestScoresList, '-');
             }
         }
     }
 
     function clearList(list) {
         list.innerHTML = '';
-        addListElement(list, "Fecha");
+        addListElement(list, "Jugador");
         addListElement(list, "Puntos");
     }
 
@@ -2487,31 +2808,6 @@ var game = (function () {
         }
         element.innerHTML = content;
         list.appendChild(element);
-    }
-
-    // extendemos el objeto array con un metodo "containsElement"
-    Array.prototype.containsElement = function(element) {
-        for (var i = 0; i < this.length; i++) {
-            if (this[i] == element) {
-                return true;
-            }
-        }
-        return false;
-    };
-
-    function removeNoBestScores() {
-        var scoresToRemove = [];
-        var bestScoreKeys = getBestScoreKeys();
-        for (var i=0; i < localStorage.length; i++) {
-            var key = localStorage.key(i);
-            if (!bestScoreKeys.containsElement(key)) {
-                scoresToRemove.push(key);
-            }
-        }
-        for (var j = 0; j < scoresToRemove.length; j++) {
-            var scoreToRemoveKey = scoresToRemove[j];
-            localStorage.removeItem(scoreToRemoveKey);
-        }
     }
     /******************************* FIN MEJORES PUNTUACIONES *******************************/
 

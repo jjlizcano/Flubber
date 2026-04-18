@@ -77,6 +77,11 @@ window.FlubberEnemyEntity = (function () {
                 hunterZigzagUntil: 0,
                 hunterBurstShotsRemaining: 0,
                 hunterNextBurstAt: 0,
+                hunterDashesCompleted: 0,
+                hunterMinDashesBeforeDescent: 4,
+                hunterForcedDescent: false,
+                hunterNextVolleyAt: 0,
+                hunterVolleyDelay: 280,
                 strikeMotion: false,
                 strikePhase: 0,
                 strikeDirection: 1,
@@ -120,24 +125,54 @@ window.FlubberEnemyEntity = (function () {
                 if (enemy.dead || options.getStageState() !== 'playing') {
                     return;
                 }
-                if (enemy.enemyType !== 3 && enemy.shots <= 0) {
-                    return;
-                }
 
                 var centerX = enemy.posX + (enemy.spriteWidth / 2) - 5;
                 var baseY = enemy.posY + enemy.spriteHeight;
                 var shot = options.createEvilShot(centerX, baseY);
                 shot.vx = 0;
                 shot.add();
+            }
 
-                if (enemy.enemyType !== 3) {
-                    enemy.shots--;
+            function fireDoubleVerticalShot() {
+                if (enemy.dead || options.getStageState() !== 'playing') {
+                    return;
                 }
+
+                var centerX = enemy.posX + (enemy.spriteWidth / 2) - 5;
+                var baseY = enemy.posY + enemy.spriteHeight;
+
+                var leftShot = options.createEvilShot(centerX - 8, baseY);
+                leftShot.vx = 0;
+                leftShot.vy = leftShot.speed;
+                leftShot.add();
+
+                var rightShot = options.createEvilShot(centerX + 8, baseY);
+                rightShot.vx = 0;
+                rightShot.vy = rightShot.speed;
+                rightShot.add();
             }
 
             function updateHunterMovement(movementSpeed, speedMultiplier) {
                 var nowTime = new Date().getTime();
                 var appliedMultiplier = typeof speedMultiplier === 'number' ? speedMultiplier : 1;
+
+                var lowerThirdStartY = canvasHeight * (2 / 3);
+                var canForceDescent = enemy.hunterDashesCompleted >= (enemy.hunterMinDashesBeforeDescent || 0);
+                if (!enemy.hunterForcedDescent && enemy.posY >= lowerThirdStartY && canForceDescent) {
+                    enemy.hunterForcedDescent = true;
+                    enemy.hunterState = 'descent';
+                    enemy.hunterNextVolleyAt = nowTime;
+                }
+
+                if (enemy.hunterForcedDescent) {
+                    enemy.posY += Math.max(0.9, movementSpeed);
+                    if (nowTime >= enemy.hunterNextVolleyAt) {
+                        fireDoubleVerticalShot();
+                        enemy.hunterNextVolleyAt = nowTime + (enemy.hunterVolleyDelay || 280);
+                    }
+                    return;
+                }
+
                 if (enemy.hunterState === 'enter') {
                     enemy.posY += Math.max(0.9, movementSpeed);
                     if (enemy.posY >= enemy.hunterEntryTargetY) {
@@ -186,6 +221,7 @@ window.FlubberEnemyEntity = (function () {
                         Math.max(4.2 * appliedMultiplier, enemy.hunterDashSpeed * appliedMultiplier)
                     );
                     if (reachedTarget) {
+                        enemy.hunterDashesCompleted = (enemy.hunterDashesCompleted || 0) + 1;
                         enemy.hunterState = 'return';
                     }
                     return;
@@ -454,7 +490,7 @@ window.FlubberEnemyEntity = (function () {
                 if (enemy.enemyType === 3 || enemy.enemyType === 5) {
                     return;
                 }
-                if (enemy.shots > 0 && !enemy.dead && options.getStageState() === 'playing') {
+                if (!enemy.dead && options.getStageState() === 'playing') {
                     var centerX = enemy.posX + (enemy.spriteWidth / 2) - 5;
                     var baseY = enemy.posY + enemy.spriteHeight;
                     if (enemy.enemyType === 2) {
@@ -478,7 +514,6 @@ window.FlubberEnemyEntity = (function () {
                         var shot = options.createEvilShot(centerX, baseY);
                         shot.add();
                     }
-                    enemy.shots--;
                     enemy.shotTimeoutId = setTimeout(function () {
                         shoot();
                     }, options.getRandomNumber(3000));
@@ -665,6 +700,11 @@ window.FlubberEnemyEntity = (function () {
                 enemy.hunterReturnSpeed = Math.max(2.6, enemy.goDownSpeed * 2.4);
                 enemy.zigzagHorizontalSpeed = Math.max(1.5, enemy.goDownSpeed * 1.2);
                 enemy.zigzagVerticalSpeed = Math.max(0.6, enemy.goDownSpeed * 0.75);
+                enemy.hunterDashesCompleted = 0;
+                enemy.hunterMinDashesBeforeDescent = 4;
+                enemy.hunterForcedDescent = false;
+                enemy.hunterNextVolleyAt = 0;
+                enemy.hunterVolleyDelay = 280;
                 enemy.posX = getRandomNumber(Math.max(1, canvasWidth - enemy.spriteWidth));
                 enemy.posY = -enemy.spriteHeight - getRandomNumber(80);
             } else if (enemy.enemyType === 4) {
