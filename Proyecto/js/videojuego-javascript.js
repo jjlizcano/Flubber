@@ -1285,13 +1285,26 @@ var game = (function () {
 
         player.doAnything = function() {
             var initialPosX = player.posX;
+            var moveDirection = 0;
 
             if (player.dead)
                 return;
-            if (keyPressed.left && player.posX > 5)
-                player.posX -= player.speed;
-            if (keyPressed.right && player.posX < (canvas.width - player.width - 5))
-                player.posX += player.speed;
+            if (keyPressed.left && !keyPressed.right) {
+                moveDirection = -1;
+            } else if (keyPressed.right && !keyPressed.left) {
+                moveDirection = 1;
+            }
+
+            if (moveDirection !== 0) {
+                player.posX += moveDirection * player.speed;
+            }
+
+            if (player.posX < 5) {
+                player.posX = 5;
+            } else if (player.posX > (canvas.width - player.width - 5)) {
+                player.posX = canvas.width - player.width - 5;
+            }
+
             if (keyPressed.fire)
                 shoot();
 
@@ -1799,7 +1812,7 @@ var game = (function () {
             if (enemy.enemyType === 3 || enemy.enemyType === 5) {
                 return;
             }
-            if (enemy.shots > 0 && !enemy.dead && stageState === 'playing') {
+            if (!enemy.dead && stageState === 'playing') {
                 var centerX = enemy.posX + (enemy.image.width / 2) - 5;
                 var baseY = enemy.posY + enemy.image.height;
                 if (enemy.enemyType === 2) {
@@ -1823,7 +1836,6 @@ var game = (function () {
                     var disparo = new EvilShot(centerX, baseY);
                     disparo.add();
                 }
-                enemy.shots --;
                 enemy.shotTimeoutId = setTimeout(function() {
                     shoot(enemy);
                 }, getRandomNumber(3000));
@@ -2176,6 +2188,8 @@ var game = (function () {
             return;
         }
 
+        playerAction();
+
         if (player.updateVisualFeedback) {
             player.updateVisualFeedback();
         }
@@ -2215,8 +2229,6 @@ var game = (function () {
         }
 
         showLifeAndScore();
-
-        playerAction();
     }
 
     function updatePlayerShot(playerShot, id) {

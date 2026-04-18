@@ -125,19 +125,12 @@ window.FlubberEnemyEntity = (function () {
                 if (enemy.dead || options.getStageState() !== 'playing') {
                     return;
                 }
-                if (enemy.enemyType !== 3 && enemy.shots <= 0) {
-                    return;
-                }
 
                 var centerX = enemy.posX + (enemy.spriteWidth / 2) - 5;
                 var baseY = enemy.posY + enemy.spriteHeight;
                 var shot = options.createEvilShot(centerX, baseY);
                 shot.vx = 0;
                 shot.add();
-
-                if (enemy.enemyType !== 3) {
-                    enemy.shots--;
-                }
             }
 
             function fireDoubleVerticalShot() {
@@ -497,7 +490,7 @@ window.FlubberEnemyEntity = (function () {
                 if (enemy.enemyType === 3 || enemy.enemyType === 5) {
                     return;
                 }
-                if (enemy.shots > 0 && !enemy.dead && options.getStageState() === 'playing') {
+                if (!enemy.dead && options.getStageState() === 'playing') {
                     var centerX = enemy.posX + (enemy.spriteWidth / 2) - 5;
                     var baseY = enemy.posY + enemy.spriteHeight;
                     if (enemy.enemyType === 2) {
@@ -521,7 +514,6 @@ window.FlubberEnemyEntity = (function () {
                         var shot = options.createEvilShot(centerX, baseY);
                         shot.add();
                     }
-                    enemy.shots--;
                     enemy.shotTimeoutId = setTimeout(function () {
                         shoot();
                     }, options.getRandomNumber(3000));

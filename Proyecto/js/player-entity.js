@@ -84,15 +84,25 @@ window.FlubberPlayerEntity = (function () {
 
             player.doAnything = function () {
                 var initialPosX = player.posX;
+                var moveDirection = 0;
 
                 if (player.dead) {
                     return;
                 }
-                if (options.getKeyPressed().left && player.posX > 5) {
-                    player.posX -= player.speed;
+                if (options.getKeyPressed().left && !options.getKeyPressed().right) {
+                    moveDirection = -1;
+                } else if (options.getKeyPressed().right && !options.getKeyPressed().left) {
+                    moveDirection = 1;
                 }
-                if (options.getKeyPressed().right && player.posX < (options.getCanvasWidth() - player.width - 5)) {
-                    player.posX += player.speed;
+
+                if (moveDirection !== 0) {
+                    player.posX += moveDirection * player.speed;
+                }
+
+                if (player.posX < 5) {
+                    player.posX = 5;
+                } else if (player.posX > (options.getCanvasWidth() - player.width - 5)) {
+                    player.posX = options.getCanvasWidth() - player.width - 5;
                 }
                 if (options.getKeyPressed().fire) {
                     shoot();
