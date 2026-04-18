@@ -57,11 +57,11 @@ window.FlubberCollisionSystem = (function () {
     function getPlayerHitCircle(player, playerSpriteImage) {
         var width = player && player.width ? player.width : ((playerSpriteImage && playerSpriteImage.width) || 52);
         var height = player && player.height ? player.height : 66;
-        var radius = Math.max(12, Math.round(Math.min(width, height) * 0.28));
+        var radius = Math.max(12, Math.round(Math.min(width, height) * 0.2));
 
         return {
             x: (player ? player.posX : 0) + (width / 2),
-            y: (player ? player.posY : 0) + Math.round(height * 0.44),
+            y: (player ? player.posY : 0) + Math.round(height * 0.4),
             radius: radius
         };
     }
@@ -170,7 +170,9 @@ window.FlubberCollisionSystem = (function () {
     }
 
     function getEnemyShotBounds(shot) {
-        return getRectBounds(shot.posX, shot.posY, 10, 20);
+        var width = (shot && shot.image && shot.image.width) ? shot.image.width : 10;
+        var height = (shot && shot.image && shot.image.height) ? shot.image.height : 20;
+        return getRectBounds(shot.posX, shot.posY, width, height);
     }
 
     return {

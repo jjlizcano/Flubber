@@ -10,37 +10,12 @@ window.requestAnimFrame = (function () {
         };
 })();
 arrayRemove = function (array, from) {
-    if (!array || !array.length) {
-        return 0;
-    }
-
-    var index = parseInt(from, 10);
-    if (isNaN(index)) {
-        return array.length;
-    }
-
-    if (index < 0) {
-        index = array.length + index;
-    }
-
-    if (index < 0 || index >= array.length) {
-        return array.length;
-    }
-
-    array.splice(index, 1);
-    return array.length;
+    var rest = array.slice((from) + 1 || array.length);
+    array.length = from < 0 ? array.length + from : from;
+    return array.push.apply(array, rest);
 };
 
 var game = (function () {
-
-    var gameConfig = window.FlubberGameConfig || {};
-    var collisionSystem = window.FlubberCollisionSystem || null;
-    var damageSystem = null;
-    var shotEntities = null;
-    var shotRuntime = null;
-    var playerEntityFactory = null;
-    var enemyEntityFactory = null;
-    var stageManager = null;
 
     // Variables globales a la aplicacion
     var canvas,
@@ -49,38 +24,44 @@ var game = (function () {
         bufferctx,
         player,
         playerShot,
-        playerSpriteImage,
         bgMain,
         bgBoss,
-        defaultEnemySpeed = gameConfig.defaultEnemySpeed || 1,
-        totalLevels = gameConfig.totalLevels || 2,
-        phasesPerLevel = gameConfig.phasesPerLevel || 10,
-        playerLife = gameConfig.playerLife || 3,
-        shotSpeed = gameConfig.shotSpeed || 5,
-        playerSpeed = gameConfig.playerSpeed || 5,
+        defaultEnemySpeed = 1,
+        totalLevels = 2,
+        phasesPerLevel = 10,
+        playerLife = 3,
+        shotSpeed = 5,
+        playerSpeed = 5,
         currentLevel = 1,
         currentPhase = 1,
         currentStageType = 'normal',
         stageState = 'countdown',
         stageMessage = '',
         stageTransitionUntil = 0,
-        stageSummaryDuration = gameConfig.stageSummaryDuration || 2000,
-        stageCountdownDuration = gameConfig.stageCountdownDuration || 3000,
+        stageSummaryDuration = 2000,
+        stageCountdownDuration = 3000,
         activeStageConfig,
         pendingStageSpawns = 0,
         spawnedStageEnemies = 0,
         stageSpawnTimeout = null,
         youLoose = false,
         congratulations = false,
-        minHorizontalOffset = gameConfig.minHorizontalOffset || 100,
-        maxHorizontalOffset = gameConfig.maxHorizontalOffset || 400,
+        minHorizontalOffset = 100,
+        maxHorizontalOffset = 400,
         activeEnemies = [],
-        totalBestScoresToShow = gameConfig.totalBestScoresToShow || 5, // las mejores puntuaciones que se mostraran
+        totalBestScoresToShow = 5, // las mejores puntuaciones que se mostraran
         playerShotsBuffer = [],
         evilShotsBuffer = [],
         evilShotImage,
         playerShotImage,
         playerKilledImage,
+        playerAnimations = {
+            idle: [],
+            left: [],
+            right: [],
+            frameCount: 16,
+            frameDurationMs: 1000 / 16
+        },
         evilImages = {
             animation : [],
             killed : new Image()
@@ -90,21 +71,17 @@ var game = (function () {
             killed : new Image()
         },
         keyPressed = {},
-        keyMap = gameConfig.keyMap || {
+        keyMap = {
             left: 37,
             right: 39,
-            fire: 32
+            fire: 32     // tecla espacio
         },
         nextPlayerShot = 0,
         playerShotDelay = 250,
         now = 0,
-        assetsReady = false,
-        assetsLoaded = 0,
-        assetsTotal = 0,
-        debugHitboxes = false,
-        playerDamageAppliedThisFrame = false;
+        debugHitboxes = false;
 
-    var arcadeTheme = gameConfig.arcadeTheme || {
+    var arcadeTheme = {
         panelBg: 'rgba(25, 8, 32, 0.7)',
         panelStroke: 'rgba(255, 180, 0, 0.75)',
         primaryText: '#ffd447',
@@ -119,20 +96,32 @@ var game = (function () {
         countdownFont: "bold 58px 'Courier New', monospace"
     };
 
-    var enemyTypeConfigs = gameConfig.enemyTypeConfigs || {};
+    var enemyTypeConfigs = {
+        1: { spriteIndex: 0, lifeBonus: 0, shotsBonus: 0, speedBonus: 0.14, pointsBonus: 0 },
+        2: { spriteIndex: 1, lifeBonus: 1, shotsBonus: 0, speedBonus: 0.10, pointsBonus: 1 },
+        3: { spriteIndex: 2, lifeBonus: 2, shotsBonus: 1, speedBonus: 0.08, pointsBonus: 3 },
+        4: { spriteIndex: 3, lifeBonus: 3, shotsBonus: 1, speedBonus: 0.05, pointsBonus: 5 },
+        5: { spriteIndex: 4, lifeBonus: 4, shotsBonus: 1, speedBonus: 0.00, pointsBonus: 7 }
+    };
 
-    var scoreSystem = gameConfig.scoreSystem || {};
-    var scoreStoragePrefix = 'flubber_v2_score::';
-    var scoreSchemaStorageKey = 'flubber_score_schema';
+    var bossByLevel = {
+        1: { spriteIndex: 0, lifeBonus: 0, shotsBonus: 0, speedBonus: 0.00, pointsBonus: 0 },
+        2: { spriteIndex: 4, lifeBonus: 4, shotsBonus: 4, speedBonus: 0.10, pointsBonus: 15 }
+    };
 
-    var bossByLevel = gameConfig.bossByLevel || {};
-    var bossLevelOneConfig = gameConfig.bossLevelOne || {};
-
-    var rewardCatalog = gameConfig.rewardCatalog || {};
-
-    var bossMechanicState = {
-        nextBombSpawnAt: 0,
-        nextReinforcementSpawnAt: 0
+    var rewardCatalog = {
+        cadence: { id: 'cadence', name: 'Mas cadencia', description: 'Disparas mas rapido', maxStacks: 3, oneTime: false, rarity: 'common' },
+        shield: { id: 'shield', name: 'Escudo', description: 'Absorbe un golpe', maxStacks: 3, oneTime: false, rarity: 'common' },
+        bigBullets: { id: 'bigBullets', name: 'Balas grandes', description: 'Aumenta tamano y alcance', maxStacks: 2, oneTime: false, rarity: 'uncommon' },
+        homing: { id: 'homing', name: 'Balas teledirigidas', description: 'Buscan enemigos cercanos', maxStacks: 1, oneTime: true, rarity: 'rare' },
+        life: { id: 'life', name: '+1 vida', description: 'Ganas una vida extra', maxStacks: 1, oneTime: true, rarity: 'rare' },
+        fogueo: { id: 'fogueo', name: 'Fogueo', description: 'Limpia balas enemigas periodicamente', maxStacks: 1, oneTime: true, rarity: 'rare' },
+        bounce: { id: 'bounce', name: 'Balas con rebote', description: 'Rebota una vez entre objetivos', maxStacks: 1, oneTime: true, rarity: 'uncommon' },
+        slow: { id: 'slow', name: 'Balas ralentizantes', description: 'Enemigos ralentizados al impactar', maxStacks: 2, oneTime: false, rarity: 'uncommon' },
+        speed: { id: 'speed', name: 'Mas velocidad', description: 'Mueve mas rapido la nave', maxStacks: 2, oneTime: false, rarity: 'common' },
+        points: { id: 'points', name: 'Multiplicador puntos', description: 'Mas puntos por enemigo', maxStacks: 2, oneTime: false, rarity: 'common' },
+        dodge: { id: 'dodge', name: 'Esquivo', description: 'Evita 1 disparo enemigo', maxStacks: 1, oneTime: true, rarity: 'rare' },
+        damage: { id: 'damage', name: 'Mas daño', description: 'Tus balas quitan mas vida', maxStacks: 2, oneTime: false, rarity: 'uncommon' }
     };
 
     var runUpgrades = {
@@ -165,8 +154,7 @@ var game = (function () {
         enabled: false,
         level: 1,
         phase: 1,
-        stageType: 'normal',
-        hitboxes: false
+        stageType: 'normal'
     };
 
     function loop() {
@@ -174,343 +162,59 @@ var game = (function () {
         draw();
     }
 
-    function getImageDimension(image, fallbackDimension) {
-        if (image && image.width) {
-            return image.width;
+    function padFrameNumber(number) {
+        if (number < 10) {
+            return '00' + number;
         }
-        return fallbackDimension;
+        return '0' + number;
     }
 
-    function getRectBounds(x, y, width, height) {
-        return collisionSystem ? collisionSystem.getRectBounds(x, y, width, height) : {
-            left: x,
-            top: y,
-            right: x + width,
-            bottom: y + height,
-            width: width,
-            height: height
-        };
-    }
+    function preloadImages () {
+        for (var frameIndex = 0; frameIndex < playerAnimations.frameCount; frameIndex++) {
+            var frameName = 'frame_' + padFrameNumber(frameIndex) + '.png';
 
-    function rectsOverlap(firstRect, secondRect) {
-        return collisionSystem ? collisionSystem.rectsOverlap(firstRect, secondRect) : (
-            firstRect.left < secondRect.right &&
-            firstRect.right > secondRect.left &&
-            firstRect.top < secondRect.bottom &&
-            firstRect.bottom > secondRect.top
-        );
-    }
+            var idleFrame = new Image();
+            idleFrame.src = 'images/buenoidle/' + frameName;
+            playerAnimations.idle[frameIndex] = idleFrame;
 
-    function circleRectOverlap(circle, rect) {
-        return collisionSystem ? collisionSystem.circleRectOverlap(circle, rect) : (function () {
-            var closestX = Math.max(rect.left, Math.min(circle.x, rect.right));
-            var closestY = Math.max(rect.top, Math.min(circle.y, rect.bottom));
-            var deltaX = circle.x - closestX;
-            var deltaY = circle.y - closestY;
-            return (deltaX * deltaX) + (deltaY * deltaY) <= (circle.radius * circle.radius);
-        })();
-    }
+            var leftFrame = new Image();
+            leftFrame.src = 'images/buenoleft/' + frameName;
+            playerAnimations.left[frameIndex] = leftFrame;
 
-    function getPlayerHitCircle() {
-        return collisionSystem ? collisionSystem.getPlayerHitCircle(player, playerSpriteImage) : (function () {
-            var width = player && player.width ? player.width : getImageDimension(playerSpriteImage, 52);
-            var height = player && player.height ? player.height : 66;
-            var radius = Math.max(12, Math.round(Math.min(width, height) * 0.28));
-
-            return {
-                x: (player ? player.posX : 0) + (width / 2),
-                y: (player ? player.posY : 0) + Math.round(height * 0.44),
-                radius: radius
-            };
-        })();
-    }
-
-    function getPlayerBounds() {
-        return collisionSystem ? collisionSystem.getPlayerBounds(player, playerSpriteImage) : (function () {
-            var circle = getPlayerHitCircle();
-            return getRectBounds(circle.x - circle.radius, circle.y - circle.radius, circle.radius * 2, circle.radius * 2);
-        })();
-    }
-
-    function getEnemyBounds(enemy) {
-        return collisionSystem ? collisionSystem.getEnemyBounds(enemy) : getRectBounds(
-            enemy.posX,
-            enemy.posY,
-            enemy.spriteWidth || getImageDimension(enemy.image, 40),
-            enemy.spriteHeight || 40
-        );
-    }
-
-    function isLevelOneBossEnemy(enemy) {
-        return !!(enemy && enemy.bossLevel === 1 && enemy.isBossLevelOne && enemy.bossCombat && enemy.bossCombat.weapons);
-    }
-
-    function getBossWeaponBounds(enemy) {
-        if (!isLevelOneBossEnemy(enemy)) {
-            return [];
+            var rightFrame = new Image();
+            rightFrame.src = 'images/buenoright/' + frameName;
+            playerAnimations.right[frameIndex] = rightFrame;
         }
-
-        if (collisionSystem && typeof collisionSystem.getBossWeaponBounds === 'function') {
-            return collisionSystem.getBossWeaponBounds(enemy);
-        }
-
-        var bounds = [];
-        for (var i = 0; i < enemy.bossCombat.weapons.length; i++) {
-            var weapon = enemy.bossCombat.weapons[i];
-            if (!weapon || weapon.destroyed) {
-                continue;
-            }
-            bounds.push({
-                id: weapon.id || ('weapon-' + i),
-                index: i,
-                left: enemy.posX + weapon.offsetX,
-                top: enemy.posY + weapon.offsetY,
-                right: enemy.posX + weapon.offsetX + weapon.width,
-                bottom: enemy.posY + weapon.offsetY + weapon.height,
-                width: weapon.width,
-                height: weapon.height
-            });
-        }
-        return bounds;
-    }
-
-    function getAliveBossWeaponsCount(enemy) {
-        var weaponBounds = getBossWeaponBounds(enemy);
-        return weaponBounds.length;
-    }
-
-    function getBossWeaponHit(enemy, shotBounds) {
-        var weaponBounds = getBossWeaponBounds(enemy);
-        for (var i = 0; i < weaponBounds.length; i++) {
-            if (rectsOverlap(shotBounds, weaponBounds[i])) {
-                return weaponBounds[i];
-            }
-        }
-        return null;
-    }
-
-    function getPlayerShotBounds(shot) {
-        return collisionSystem ? collisionSystem.getPlayerShotBounds(shot) : (function () {
-            var width = Math.max(10, Math.round(10 * (shot.scale || 1)));
-            var height = Math.max(18, Math.round(20 * (shot.scale || 1)));
-            return getRectBounds(shot.posX - (width / 2), shot.posY, width, height);
-        })();
-    }
-
-    function resetPlayerPosition(targetPlayer) {
-        if (!targetPlayer) {
-            return;
-        }
-        targetPlayer.width = targetPlayer.width || getImageDimension(playerSpriteImage, 52);
-        targetPlayer.height = targetPlayer.height || 66;
-        targetPlayer.posX = (canvas.width / 2) - (targetPlayer.width / 2);
-        targetPlayer.posY = canvas.height - targetPlayer.height - 10;
-    }
-
-    function getEnemyShotBounds(shot) {
-        return collisionSystem ? collisionSystem.getEnemyShotBounds(shot) : getRectBounds(shot.posX, shot.posY, 10, 20);
-    }
-
-    function markAssetLoaded(onComplete) {
-        assetsLoaded++;
-        if (assetsLoaded >= assetsTotal && typeof onComplete === 'function') {
-            onComplete();
-        }
-    }
-
-    function syncStageStateFromManager() {
-        if (!stageManager) {
-            return;
-        }
-
-        var stageSnapshot = stageManager.getState();
-        currentLevel = stageSnapshot.currentLevel;
-        currentPhase = stageSnapshot.currentPhase;
-        currentStageType = stageSnapshot.currentStageType;
-        stageState = stageSnapshot.stageState;
-        stageMessage = stageSnapshot.stageMessage;
-        stageTransitionUntil = stageSnapshot.stageTransitionUntil;
-        activeStageConfig = stageSnapshot.activeStageConfig;
-        pendingStageSpawns = stageSnapshot.pendingStageSpawns;
-        spawnedStageEnemies = stageSnapshot.spawnedStageEnemies;
-        stageSpawnTimeout = stageSnapshot.stageSpawnTimeout;
-    }
-
-    function drawLoadingScreen() {
-        var centerX = canvas.width / 2;
-        var centerY = canvas.height / 2;
-        bufferctx.clearRect(0, 0, canvas.width, canvas.height);
-        bufferctx.fillStyle = '#140814';
-        bufferctx.fillRect(0, 0, canvas.width, canvas.height);
-        drawArcadePanel(70, centerY - 90, canvas.width - 140, 180, 0.94, arcadeTheme.panelStroke);
-        drawArcadeText('CARGANDO SPRITES', centerX, centerY - 26, {
-            color: arcadeTheme.primaryText,
-            font: arcadeTheme.titleFont,
-            align: 'center',
-            glowColor: arcadeTheme.glow,
-            glowBlur: 10,
-            outlineColor: arcadeTheme.outline,
-            outlineWidth: 4
-        });
-        drawArcadeText('(' + assetsLoaded + ' / ' + assetsTotal + ')', centerX, centerY + 18, {
-            color: '#fff3a3',
-            font: "bold 16px 'Courier New', monospace",
-            align: 'center',
-            glowColor: 'rgba(255, 120, 0, 0.8)',
-            glowBlur: 6,
-            outlineColor: arcadeTheme.outline,
-            outlineWidth: 2
-        });
-    }
-
-    function drawDebugHitboxes() {
-        var i;
-
-        if (player && !player.dead) {
-            var playerHitCircle = getPlayerHitCircle();
-            bufferctx.save();
-            bufferctx.strokeStyle = 'rgba(80, 255, 160, 0.9)';
-            bufferctx.lineWidth = 2;
-            bufferctx.beginPath();
-            bufferctx.arc(playerHitCircle.x, playerHitCircle.y, playerHitCircle.radius, 0, Math.PI * 2, false);
-            bufferctx.stroke();
-            bufferctx.restore();
-        }
-
-        for (i = 0; i < activeEnemies.length; i++) {
-            if (activeEnemies[i] && !activeEnemies[i].dead) {
-                if (isLevelOneBossEnemy(activeEnemies[i])) {
-                    var weaponBounds = getBossWeaponBounds(activeEnemies[i]);
-                    for (var w = 0; w < weaponBounds.length; w++) {
-                        bufferctx.save();
-                        bufferctx.strokeStyle = 'rgba(255, 80, 120, 0.9)';
-                        bufferctx.lineWidth = 2;
-                        bufferctx.strokeRect(weaponBounds[w].left, weaponBounds[w].top, weaponBounds[w].width, weaponBounds[w].height);
-                        bufferctx.restore();
-                    }
-                } else {
-                    var enemyBounds = getEnemyBounds(activeEnemies[i]);
-                    bufferctx.save();
-                    bufferctx.strokeStyle = 'rgba(255, 80, 120, 0.9)';
-                    bufferctx.lineWidth = 2;
-                    bufferctx.strokeRect(enemyBounds.left, enemyBounds.top, enemyBounds.width, enemyBounds.height);
-                    bufferctx.restore();
-                }
-            }
-        }
-
-        for (i = 0; i < playerShotsBuffer.length; i++) {
-            var playerShotBounds = getPlayerShotBounds(playerShotsBuffer[i]);
-            bufferctx.save();
-            bufferctx.strokeStyle = 'rgba(80, 180, 255, 0.9)';
-            bufferctx.lineWidth = 1;
-            bufferctx.strokeRect(playerShotBounds.left, playerShotBounds.top, playerShotBounds.width, playerShotBounds.height);
-            bufferctx.restore();
-        }
-
-        for (i = 0; i < evilShotsBuffer.length; i++) {
-            var evilShotBounds = getEnemyShotBounds(evilShotsBuffer[i]);
-            bufferctx.save();
-            bufferctx.strokeStyle = 'rgba(255, 200, 80, 0.9)';
-            bufferctx.lineWidth = 1;
-            bufferctx.strokeRect(evilShotBounds.left, evilShotBounds.top, evilShotBounds.width, evilShotBounds.height);
-            bufferctx.restore();
-        }
-    }
-
-    function preloadImages (onComplete) {
-        assetsLoaded = 0;
-        assetsReady = false;
-        assetsTotal = 24;
-
-        playerSpriteImage = new Image();
-        playerSpriteImage.onload = function () {
-            markAssetLoaded(onComplete);
-        };
-        playerSpriteImage.onerror = function () {
-            markAssetLoaded(onComplete);
-        };
-        playerSpriteImage.src = 'images/bueno.png';
 
         for (var i = 1; i <= 8; i++) {
             var evilImage = new Image();
-            evilImage.onload = function () {
-                markAssetLoaded(onComplete);
-            };
-            evilImage.onerror = function () {
-                markAssetLoaded(onComplete);
-            };
             evilImage.src = 'images/malo' + i + '.png';
             evilImages.animation[i-1] = evilImage;
             var bossImage = new Image();
-            bossImage.onload = function () {
-                markAssetLoaded(onComplete);
-            };
-            bossImage.onerror = function () {
-                markAssetLoaded(onComplete);
-            };
             bossImage.src = 'images/jefe' + i + '.png';
             bossImages.animation[i-1] = bossImage;
         }
-        evilImages.killed.onload = function () {
-            markAssetLoaded(onComplete);
-        };
-        evilImages.killed.onerror = function () {
-            markAssetLoaded(onComplete);
-        };
         evilImages.killed.src = 'images/malo_muerto.png';
-        bossImages.killed.onload = function () {
-            markAssetLoaded(onComplete);
-        };
-        bossImages.killed.onerror = function () {
-            markAssetLoaded(onComplete);
-        };
         bossImages.killed.src = 'images/jefe_muerto.png';
         bgMain = new Image();
-        bgMain.onload = function () {
-            markAssetLoaded(onComplete);
-        };
-        bgMain.onerror = function () {
-            markAssetLoaded(onComplete);
-        };
         bgMain.src = 'images/fondovertical.png';
         bgBoss = new Image();
-        bgBoss.onload = function () {
-            markAssetLoaded(onComplete);
-        };
-        bgBoss.onerror = function () {
-            markAssetLoaded(onComplete);
-        };
         bgBoss.src = 'images/fondovertical_jefe.png';
         playerShotImage = new Image();
-        playerShotImage.onload = function () {
-            markAssetLoaded(onComplete);
-        };
-        playerShotImage.onerror = function () {
-            markAssetLoaded(onComplete);
-        };
         playerShotImage.src = 'images/disparo_bueno.png';
         evilShotImage = new Image();
-        evilShotImage.onload = function () {
-            markAssetLoaded(onComplete);
-        };
-        evilShotImage.onerror = function () {
-            markAssetLoaded(onComplete);
-        };
         evilShotImage.src = 'images/disparo_malo.png';
         playerKilledImage = new Image();
-        playerKilledImage.onload = function () {
-            markAssetLoaded(onComplete);
-        };
-        playerKilledImage.onerror = function () {
-            markAssetLoaded(onComplete);
-        };
         playerKilledImage.src = 'images/bueno_muerto.png';
 
     }
 
     function init() {
-        migrateScoreRankingIfNeeded();
+
+        preloadImages();
+        resetRunUpgrades();
+        refreshPlayerStats();
+
         showBestScores();
 
         canvas = document.getElementById('canvas');
@@ -523,227 +227,11 @@ var game = (function () {
 
         loadDebugStartConfigFromUrl();
         applyDebugStartConfig();
-        debugHitboxes = !!debugStartConfig.hitboxes;
+        player = new Player(playerLife, 0);
+        applyDebugRewardsForTest();
+        startCountdown('Nivel ' + currentLevel + ' - Fase ' + currentPhase);
 
-        shotEntities = window.FlubberShotEntities ? window.FlubberShotEntities.create({
-            arrayRemove: arrayRemove,
-            getPlayerShotsBuffer: function () {
-                return playerShotsBuffer;
-            },
-            getEvilShotsBuffer: function () {
-                return evilShotsBuffer;
-            },
-            getPlayerShotImage: function () {
-                return playerShotImage;
-            },
-            getEvilShotImage: function () {
-                return evilShotImage;
-            },
-            getShotSpeed: function () {
-                return shotSpeed;
-            },
-            circleRectOverlap: circleRectOverlap,
-            getPlayerHitCircle: getPlayerHitCircle,
-            getEnemyShotBounds: getEnemyShotBounds
-        }) : null;
-
-        shotRuntime = window.FlubberShotRuntime ? window.FlubberShotRuntime.create({
-            getPlayerShotsBuffer: function () {
-                return playerShotsBuffer;
-            },
-            getEvilShotsBuffer: function () {
-                return evilShotsBuffer;
-            },
-            getPlayer: function () {
-                return player;
-            },
-            getCanvasWidth: function () {
-                return canvas.width;
-            },
-            getCanvasHeight: function () {
-                return canvas.height;
-            },
-            getBufferContext: function () {
-                return bufferctx;
-            },
-            steerPlayerShot: steerPlayerShot,
-            checkCollisions: checkCollisions,
-            circleRectOverlap: circleRectOverlap,
-            getPlayerHitCircle: getPlayerHitCircle,
-            getEnemyShotBounds: getEnemyShotBounds,
-            handlePlayerDamage: handlePlayerDamageOncePerFrame
-        }) : null;
-
-        if (!shotRuntime) {
-            throw new Error('FlubberShotRuntime module is required to update shots');
-        }
-
-        playerEntityFactory = window.FlubberPlayerEntity ? window.FlubberPlayerEntity.create({
-            getPlayerSpriteImage: function () {
-                return playerSpriteImage;
-            },
-            resetPlayerPosition: resetPlayerPosition,
-            getPlayerSpeed: function () {
-                return playerSpeed;
-            },
-            createPlayerShot: function (x, y) {
-                return shotEntities ? shotEntities.createPlayerShot(x, y) : new PlayerShot(x, y);
-            },
-            getPlayerShotDamage: function () {
-                return playerShotDamage;
-            },
-            getPlayerShotScale: function () {
-                return playerShotScale;
-            },
-            getRunUpgrades: function () {
-                return runUpgrades;
-            },
-            getPlayerShotDelay: function () {
-                return playerShotDelay;
-            },
-            getNow: function () {
-                return new Date().getTime();
-            },
-            getNowValue: function () {
-                return now;
-            },
-            setNowValue: function (value) {
-                now = value;
-            },
-            getNextPlayerShot: function () {
-                return nextPlayerShot;
-            },
-            setNextPlayerShot: function (value) {
-                nextPlayerShot = value;
-            },
-            getKeyPressed: function () {
-                return keyPressed;
-            },
-            getCanvasWidth: function () {
-                return canvas.width;
-            },
-            onKillPlayer: function () {
-                if (damageSystem) {
-                    damageSystem.killPlayer();
-                }
-            }
-        }) : null;
-
-        if (!playerEntityFactory) {
-            throw new Error('FlubberPlayerEntity module is required to create player');
-        }
-
-        enemyEntityFactory = window.FlubberEnemyEntity ? window.FlubberEnemyEntity.create({
-            getCanvasWidth: function () {
-                return canvas.width;
-            },
-            getCanvasHeight: function () {
-                return canvas.height;
-            },
-            getRandomNumber: getRandomNumber,
-            getImageDimension: getImageDimension,
-            getMinHorizontalOffset: function () {
-                return minHorizontalOffset;
-            },
-            getMaxHorizontalOffset: function () {
-                return maxHorizontalOffset;
-            },
-            getDefaultEnemySpeed: function () {
-                return defaultEnemySpeed;
-            },
-            getBossLevelOneConfig: function () {
-                return bossLevelOneConfig;
-            },
-            getStageState: function () {
-                return stageState;
-            },
-            getPlayer: function () {
-                return player;
-            },
-            createEvilShot: function (x, y) {
-                return shotEntities ? shotEntities.createEvilShot(x, y) : new EvilShot(x, y);
-            }
-        }) : null;
-
-        if (!enemyEntityFactory) {
-            throw new Error('FlubberEnemyEntity module is required to create enemies');
-        }
-
-        stageManager = window.FlubberStageManager ? window.FlubberStageManager.create({
-            totalLevels: totalLevels,
-            phasesPerLevel: phasesPerLevel,
-            defaultEnemySpeed: defaultEnemySpeed,
-            stageSummaryDuration: stageSummaryDuration,
-            stageCountdownDuration: stageCountdownDuration,
-            getNow: function () {
-                return new Date().getTime();
-            },
-            getRandomInRange: getRandomInRange,
-            getAliveEnemiesCount: getAliveEnemiesCount,
-            hasAliveEnemies: function () {
-                return getAliveEnemiesCount() > 0;
-            },
-            clearStageEntitiesContent: function () {
-                for (var i = 0; i < activeEnemies.length; i++) {
-                    if (activeEnemies[i] && activeEnemies[i].stopShooting) {
-                        activeEnemies[i].stopShooting();
-                    }
-                }
-                activeEnemies.splice(0, activeEnemies.length);
-                evilShotsBuffer.splice(0, evilShotsBuffer.length);
-                playerShotsBuffer.splice(0, playerShotsBuffer.length);
-                resetBossMechanicState();
-            },
-            createEnemyByType: createEnemyByType,
-            createBossByLevel: createBossByLevel,
-            addActiveEnemy: function (enemy) {
-                activeEnemies.push(enemy);
-            },
-            onFinalVictory: function () {
-                saveFinalScore();
-                congratulations = true;
-            },
-            initialState: {
-                currentLevel: currentLevel,
-                currentPhase: currentPhase,
-                currentStageType: currentStageType,
-                stageState: stageState,
-                stageMessage: stageMessage,
-                stageTransitionUntil: stageTransitionUntil
-            }
-        }) : null;
-
-        if (!stageManager) {
-            throw new Error('FlubberStageManager module is required to manage stages');
-        }
-
-        syncStageStateFromManager();
-
-        damageSystem = window.FlubberDamageSystem ? window.FlubberDamageSystem.create({
-            getNow: function () {
-                return new Date().getTime();
-            },
-            getRunUpgrades: function () {
-                return runUpgrades;
-            },
-            clearActiveShots: function () {
-                evilShotsBuffer.splice(0, evilShotsBuffer.length);
-                playerShotsBuffer.splice(0, playerShotsBuffer.length);
-            },
-            resetPlayerPosition: resetPlayerPosition,
-            getPlayerSpeed: function () {
-                return playerSpeed;
-            },
-            resetShotTimers: function () {
-                nextPlayerShot = 0;
-                now = 0;
-            },
-            clearStageEntities: clearStageEntities,
-            onGameOver: function () {
-                saveFinalScore();
-                youLoose = true;
-            }
-        }) : null;
+        showLifeAndScore();
 
         addListener(document, 'keydown', keyDown);
         addListener(document, 'keyup', keyUp);
@@ -753,21 +241,6 @@ var game = (function () {
             requestAnimFrame(anim);
         }
         anim();
-
-        preloadImages(function () {
-            resetRunUpgrades();
-            refreshPlayerStats();
-            player = new Player(playerLife, 0);
-            if (damageSystem) {
-                damageSystem.bindPlayer(player);
-                damageSystem.reset();
-            }
-            applyDebugRewardsForTest();
-            assetsReady = true;
-            stageManager.startCountdown('Nivel ' + currentLevel + ' - Fase ' + currentPhase);
-            syncStageStateFromManager();
-            showLifeAndScore();
-        });
     }
 
     function applyDebugRewardsForTest() {
@@ -853,28 +326,17 @@ var game = (function () {
     }
 
     function applyDebugStartConfig() {
-        if (!stageManager) {
-            if (!debugStartConfig || !debugStartConfig.enabled) {
-                currentLevel = 1;
-                currentPhase = 1;
-                currentStageType = 'normal';
-                debugHitboxes = false;
-                return;
-            }
-
-            currentLevel = Math.min(totalLevels, Math.max(1, parseInt(debugStartConfig.level, 10) || 1));
-            currentPhase = Math.min(phasesPerLevel, Math.max(1, parseInt(debugStartConfig.phase, 10) || 1));
-            currentStageType = debugStartConfig.stageType === 'boss' ? 'boss' : 'normal';
-            debugHitboxes = !!debugStartConfig.hitboxes;
-            return;
-        }
-
-        stageManager.applyDebugStartConfig(debugStartConfig);
-        syncStageStateFromManager();
         if (!debugStartConfig || !debugStartConfig.enabled) {
+            currentLevel = 1;
+            currentPhase = 1;
+            currentStageType = 'normal';
             debugHitboxes = false;
             return;
         }
+
+        currentLevel = Math.min(totalLevels, Math.max(1, parseInt(debugStartConfig.level, 10) || 1));
+        currentPhase = Math.min(phasesPerLevel, Math.max(1, parseInt(debugStartConfig.phase, 10) || 1));
+        currentStageType = debugStartConfig.stageType === 'boss' ? 'boss' : 'normal';
         debugHitboxes = !!debugStartConfig.hitboxes;
     }
 
@@ -893,6 +355,99 @@ var game = (function () {
         debugStartConfig.stageType = 'normal';
         debugStartConfig.hitboxes = false;
         debugHitboxes = false;
+    }
+
+    function drawDebugHitboxes() {
+        var i;
+        var collisionSystem = window.FlubberCollisionSystem || null;
+
+        if (player && !player.dead) {
+            var playerCircle;
+            if (collisionSystem && typeof collisionSystem.getPlayerHitCircle === 'function') {
+                playerCircle = collisionSystem.getPlayerHitCircle(player, player);
+            } else {
+                var width = player.width || 52;
+                var height = player.height || 66;
+                playerCircle = {
+                    x: player.posX + (width / 2),
+                    y: player.posY + Math.round(height * 0.44),
+                    radius: Math.max(12, Math.round(Math.min(width, height) * 0.28))
+                };
+            }
+
+            bufferctx.save();
+            bufferctx.strokeStyle = 'rgba(80, 255, 160, 0.9)';
+            bufferctx.lineWidth = 2;
+            bufferctx.beginPath();
+            bufferctx.arc(playerCircle.x, playerCircle.y, playerCircle.radius, 0, Math.PI * 2, false);
+            bufferctx.stroke();
+            bufferctx.restore();
+        }
+
+        for (i = 0; i < activeEnemies.length; i++) {
+            if (activeEnemies[i] && !activeEnemies[i].dead) {
+                var enemyBounds;
+                if (collisionSystem && typeof collisionSystem.getEnemyBounds === 'function') {
+                    enemyBounds = collisionSystem.getEnemyBounds(activeEnemies[i]);
+                } else {
+                    var enemyWidth = (activeEnemies[i].image && activeEnemies[i].image.width) || activeEnemies[i].spriteWidth || 40;
+                    var enemyHeight = (activeEnemies[i].image && activeEnemies[i].image.height) || activeEnemies[i].spriteHeight || 40;
+                    enemyBounds = {
+                        left: activeEnemies[i].posX,
+                        top: activeEnemies[i].posY,
+                        width: enemyWidth,
+                        height: enemyHeight
+                    };
+                }
+                bufferctx.save();
+                bufferctx.strokeStyle = 'rgba(255, 80, 120, 0.9)';
+                bufferctx.lineWidth = 2;
+                bufferctx.strokeRect(enemyBounds.left, enemyBounds.top, enemyBounds.width, enemyBounds.height);
+                bufferctx.restore();
+            }
+        }
+
+        for (i = 0; i < playerShotsBuffer.length; i++) {
+            var playerShot = playerShotsBuffer[i];
+            var playerShotBounds;
+            if (collisionSystem && typeof collisionSystem.getPlayerShotBounds === 'function') {
+                playerShotBounds = collisionSystem.getPlayerShotBounds(playerShot);
+            } else {
+                var playerShotWidth = Math.max(10, Math.round(10 * ((playerShot && playerShot.scale) || 1)));
+                var playerShotHeight = Math.max(18, Math.round(20 * ((playerShot && playerShot.scale) || 1)));
+                playerShotBounds = {
+                    left: playerShot.posX - (playerShotWidth / 2),
+                    top: playerShot.posY,
+                    width: playerShotWidth,
+                    height: playerShotHeight
+                };
+            }
+            bufferctx.save();
+            bufferctx.strokeStyle = 'rgba(80, 180, 255, 0.9)';
+            bufferctx.lineWidth = 1;
+            bufferctx.strokeRect(playerShotBounds.left, playerShotBounds.top, playerShotBounds.width, playerShotBounds.height);
+            bufferctx.restore();
+        }
+
+        for (i = 0; i < evilShotsBuffer.length; i++) {
+            var evilShot = evilShotsBuffer[i];
+            var evilShotBounds;
+            if (collisionSystem && typeof collisionSystem.getEnemyShotBounds === 'function') {
+                evilShotBounds = collisionSystem.getEnemyShotBounds(evilShot);
+            } else {
+                evilShotBounds = {
+                    left: evilShot.posX,
+                    top: evilShot.posY,
+                    width: 10,
+                    height: 20
+                };
+            }
+            bufferctx.save();
+            bufferctx.strokeStyle = 'rgba(255, 200, 80, 0.9)';
+            bufferctx.lineWidth = 1;
+            bufferctx.strokeRect(evilShotBounds.left, evilShotBounds.top, evilShotBounds.width, evilShotBounds.height);
+            bufferctx.restore();
+        }
     }
 
     function setDebugRewardsForTest(rewardIds) {
@@ -1115,8 +670,9 @@ var game = (function () {
     function openRewardSelector() {
         rewardChoices = generateRewardChoices();
         rewardSelectedIndex = 0;
-        stageManager.setRewardPending('Elige una recompensa');
-        syncStageStateFromManager();
+        stageState = 'reward_pending';
+        stageMessage = 'Elige una recompensa';
+        stageTransitionUntil = 0;
     }
 
     function applyReward(reward) {
@@ -1175,8 +731,7 @@ var game = (function () {
         applyReward(selectedReward);
         rewardChoices = [];
         rewardSelectedIndex = 0;
-        stageManager.completeStageClear();
-        syncStageStateFromManager();
+        completeStageClear();
     }
 
     function drawRewardSelector() {
@@ -1295,61 +850,100 @@ var game = (function () {
         bufferctx.restore();
     }
 
-    function shouldOpenRewardSelector() {
-        return stageManager.shouldOpenRewardSelector();
-    }
+    function getCurrentStageConfig() {
+        var isBossStage = currentStageType === 'boss';
+        var enemyCount = getEnemyCountForPhase(currentLevel, currentPhase);
+        var baseEnemyLife = 2 + (currentLevel - 1) + Math.floor((currentPhase - 1) / 2);
+        var baseEnemyShots = 3 + currentLevel + Math.floor((currentPhase - 1) / 2);
+        var baseEnemySpeed = defaultEnemySpeed + ((currentLevel - 1) * 0.22) + ((currentPhase - 1) * 0.05);
 
-    function getGlobalPhaseIndex(level, phase) {
-        var safeLevel = Math.max(1, parseInt(level, 10) || 1);
-        var safePhase = Math.max(1, parseInt(phase, 10) || 1);
-        return ((safeLevel - 1) * phasesPerLevel) + safePhase;
-    }
+        var enemyTypePool = getEnemyTypePool(currentLevel, currentPhase);
+        var maxConcurrent = getMaxConcurrentForStage(currentLevel, currentPhase);
+        var spawnDelay = getSpawnDelayForLevel(currentLevel);
 
-    function getEnemyTypeBaseScore(enemyType) {
-        var enemyTypeBase = scoreSystem.enemyTypeBase || {};
-        if (typeof enemyTypeBase[enemyType] === 'number') {
-            return enemyTypeBase[enemyType];
-        }
-        if (typeof enemyTypeBase[enemyType + ''] === 'number') {
-            return enemyTypeBase[enemyType + ''];
-        }
-        var fallbackByType = {
-            1: 6,
-            2: 8,
-            3: 10,
-            4: 12,
-            5: 14
+        return {
+            type: currentStageType,
+            enemyCount: isBossStage ? 1 : enemyCount,
+            enemyLife: baseEnemyLife,
+            enemyShots: baseEnemyShots,
+            enemySpeed: baseEnemySpeed,
+            enemyPoints: 4 + currentLevel + currentPhase + Math.floor((currentPhase - 1) / 2),
+            enemyTypePool: enemyTypePool,
+            maxConcurrent: isBossStage ? 1 : maxConcurrent,
+            spawnDelayMin: isBossStage ? 0 : spawnDelay.min,
+            spawnDelayMax: isBossStage ? 0 : spawnDelay.max,
+            bossLife: 10 + (currentLevel * 4),
+            bossShots: 20 + (currentLevel * 8),
+            bossSpeed: 0.8 + (currentLevel * 0.1),
+            bossPoints: 40 + (currentLevel * 10)
         };
-        return fallbackByType[enemyType] || fallbackByType[1];
     }
 
-    function getBossBaseScore() {
-        if (typeof scoreSystem.bossBase === 'number') {
-            return scoreSystem.bossBase;
+    function getEnemyCountForPhase(level, phase) {
+        if (level === 1) {
+            return phase + 1;
         }
-        return 24;
+        if (level === 2) {
+            return phase + 11;
+        }
+        return phase + 11;
     }
 
-    function getPhaseScoreMultiplier(globalPhaseIndex) {
-        var multipliers = scoreSystem.phaseMultiplierByGlobalPhase || [];
-        if (!multipliers.length) {
-            return 1;
+    function getEnemyTypePool(level, phase) {
+        if (level === 1) {
+            if (phase <= 3) {
+                return [1];
+            }
+            if (phase <= 7) {
+                return [1, 2];
+            }
+            return [1, 2, 3];
         }
-        var safeIndex = Math.max(1, parseInt(globalPhaseIndex, 10) || 1);
-        var listIndex = Math.min(multipliers.length, safeIndex) - 1;
-        var multiplier = multipliers[listIndex];
-        return typeof multiplier === 'number' ? multiplier : 1;
+
+        if (phase <= 2) {
+            return [2, 3];
+        }
+        if (phase <= 4) {
+            return [2, 3, 4];
+        }
+        if (phase <= 7) {
+            return [2, 3, 4, 5];
+        }
+        return [1, 2, 3, 4, 5];
     }
 
-    function getScoreToAward(enemy) {
-        if (!enemy) {
-            return 0;
+    function getMaxConcurrentForStage(level, phase) {
+        if (level === 1) {
+            if (phase <= 3) {
+                return 3;
+            }
+            if (phase <= 7) {
+                return 4;
+            }
+            return 5;
         }
-        var baseScore = typeof enemy.scoreBase === 'number' ? enemy.scoreBase : (enemy.pointsToKill || 0);
-        var phaseIndex = typeof enemy.scorePhaseIndex === 'number' ? enemy.scorePhaseIndex : getGlobalPhaseIndex(currentLevel, currentPhase);
-        var phaseMultiplier = getPhaseScoreMultiplier(phaseIndex);
-        var upgradeMultiplier = playerScoreMultiplier || 1;
-        return Math.max(1, Math.round(baseScore * phaseMultiplier * upgradeMultiplier));
+
+        if (phase <= 3) {
+            return 5;
+        }
+        if (phase <= 7) {
+            return 6;
+        }
+        return 7;
+    }
+
+    function getSpawnDelayForLevel(level) {
+        if (level === 1) {
+            return { min: 1200, max: 1800 };
+        }
+        return { min: 900, max: 1400 };
+    }
+
+    function shouldOpenRewardSelector() {
+        if (currentStageType === 'boss') {
+            return true;
+        }
+        return currentStageType === 'normal' && currentPhase % 2 === 0;
     }
 
     function getAliveEnemiesCount() {
@@ -1363,185 +957,94 @@ var game = (function () {
     }
 
     function clearStageEntities() {
-        stageManager.clearStageEntities();
-        syncStageStateFromManager();
-    }
-
-    function resetBossMechanicState() {
-        bossMechanicState.nextBombSpawnAt = 0;
-        bossMechanicState.nextReinforcementSpawnAt = 0;
-    }
-
-    function getActiveLevelOneBoss() {
-        for (var i = 0; i < activeEnemies.length; i++) {
-            var enemy = activeEnemies[i];
-            if (!enemy || enemy.dead) {
-                continue;
-            }
-            if (isLevelOneBossEnemy(enemy)) {
-                return enemy;
-            }
-        }
-        return null;
-    }
-
-    function countAliveBossBombs() {
-        var bombs = 0;
-        for (var i = 0; i < activeEnemies.length; i++) {
-            if (activeEnemies[i] && !activeEnemies[i].dead && activeEnemies[i].isBossBomb) {
-                bombs++;
-            }
-        }
-        return bombs;
-    }
-
-    function countAliveBossReinforcements() {
-        var reinforcements = 0;
-        for (var i = 0; i < activeEnemies.length; i++) {
-            if (activeEnemies[i] && !activeEnemies[i].dead && activeEnemies[i].isBossReinforcement) {
-                reinforcements++;
-            }
-        }
-        return reinforcements;
-    }
-
-    function spawnBombBurstTowardsPlayer(sourceEnemy) {
-        if (!sourceEnemy || sourceEnemy.dead || !player || player.dead) {
-            return;
-        }
-
-        var shotCount = Math.max(3, bossLevelOneConfig.bombBurstShotCount || 3);
-        var spread = bossLevelOneConfig.bombFanSpreadRadians || 0.64;
-        var centerX = sourceEnemy.posX + (sourceEnemy.spriteWidth / 2) - 5;
-        var centerY = sourceEnemy.posY + sourceEnemy.spriteHeight;
-        var targetX = player.posX + (player.width / 2);
-        var targetY = player.posY + (player.height / 2);
-        var angleToPlayer = Math.atan2(targetY - centerY, targetX - centerX);
-        var speed = Math.max(2.4, bossLevelOneConfig.bombProjectileSpeed || 3.4);
-        var step = shotCount > 1 ? spread / (shotCount - 1) : 0;
-        var start = angleToPlayer - (spread / 2);
-
-        for (var i = 0; i < shotCount; i++) {
-            var angle = start + (step * i);
-            var shot = shotEntities ? shotEntities.createEvilShot(centerX, centerY) : new EvilShot(centerX, centerY);
-            shot.vx = Math.cos(angle) * speed;
-            shot.vy = Math.max(1.2, Math.sin(angle) * speed);
-            shot.add();
-        }
-    }
-
-    function createBossBomb() {
-        var bombImage = evilImages.animation[6] || evilImages.animation[0];
-        var spriteWidth = getImageDimension(bombImage, 40);
-        var spriteHeight = getImageDimension(bombImage, 40);
-        var maxY = Math.max(36, Math.floor(canvas.height / 2) - spriteHeight);
-        var minY = Math.max(12, bossLevelOneConfig.bombMinY || 36);
-        var maxX = Math.max(1, canvas.width - spriteWidth);
-
-        var bomb = {
-            isBossBomb: true,
-            enemyType: 4,
-            bossLevel: 0,
-            image: bombImage,
-            spriteWidth: spriteWidth,
-            spriteHeight: spriteHeight,
-            posX: getRandomNumber(maxX),
-            posY: getRandomInRange(minY, Math.max(minY, maxY)),
-            life: Math.max(1, bossLevelOneConfig.bombLife || 2),
-            dead: false,
-            pointsToKill: Math.max(1, bossLevelOneConfig.bombScoreBase || 9),
-            scoreBase: Math.max(1, bossLevelOneConfig.bombScoreBase || 9),
-            scorePhaseIndex: getGlobalPhaseIndex(currentLevel, currentPhase),
-            update: function () {},
-            isOutOfScreen: function () {
-                return false;
-            },
-            stopShooting: function () {},
-            kill: function () {
-                if (bomb.dead) {
-                    return;
-                }
-                spawnBombBurstTowardsPlayer(bomb);
-                bomb.dead = true;
-            }
-        };
-
-        return bomb;
-    }
-
-    function spawnBossReinforcementTypeOne() {
-        var enemyType = enemyTypeConfigs[1] || { spriteIndex: 0, lifeBonus: 0, shotsBonus: 0, speedBonus: 0 };
-        var baseLife = activeStageConfig ? activeStageConfig.enemyLife : 2;
-        var baseShots = activeStageConfig ? activeStageConfig.enemyShots : 2;
-        var baseSpeed = activeStageConfig ? activeStageConfig.enemySpeed : 1.1;
-
-        var reinforcement = enemyEntityFactory.createEvil(
-            baseLife + (enemyType.lifeBonus || 0) + (bossLevelOneConfig.reinforcementLifeBonus || 0),
-            baseShots + (enemyType.shotsBonus || 0) + (bossLevelOneConfig.reinforcementShotsBonus || 0),
-            baseSpeed + (enemyType.speedBonus || 0) + (bossLevelOneConfig.reinforcementSpeedBonus || 0),
-            enemyType.spriteIndex || 0,
-            1,
-            evilImages
-        );
-        reinforcement.isBossReinforcement = true;
-        reinforcement.scoreBase = getEnemyTypeBaseScore(1);
-        reinforcement.scorePhaseIndex = getGlobalPhaseIndex(currentLevel, currentPhase);
-        reinforcement.pointsToKill = reinforcement.scoreBase;
-        activeEnemies.push(reinforcement);
-    }
-
-    function updateBossMechanics() {
-        var boss = getActiveLevelOneBoss();
-        if (!boss || !boss.bossCombat || stageState !== 'playing') {
-            return;
-        }
-
-        var nowTime = new Date().getTime();
-
-        if (boss.bossCombat.firstWeaponDestroyedTriggered && nowTime >= bossMechanicState.nextBombSpawnAt) {
-            if (countAliveBossBombs() < Math.max(1, bossLevelOneConfig.bombMaxActive || 3)) {
-                activeEnemies.push(createBossBomb());
-            }
-            bossMechanicState.nextBombSpawnAt = nowTime + Math.max(600, bossLevelOneConfig.bombSpawnIntervalMs || 2200);
-        }
-
-        if (boss.bossCombat.secondWeaponDestroyedTriggered && nowTime >= bossMechanicState.nextReinforcementSpawnAt) {
-            if (countAliveBossReinforcements() < Math.max(1, bossLevelOneConfig.reinforcementMaxAlive || 3)) {
-                spawnBossReinforcementTypeOne();
-            }
-            bossMechanicState.nextReinforcementSpawnAt = nowTime + Math.max(900, bossLevelOneConfig.reinforcementIntervalMs || 3200);
-        }
-    }
-
-    function onBossWeaponDestroyed(boss) {
-        if (!boss || !boss.bossCombat) {
-            return;
-        }
-
-        var aliveCount = getAliveBossWeaponsCount(boss);
-        if (!boss.bossCombat.firstWeaponDestroyedTriggered && aliveCount <= 3) {
-            boss.bossCombat.firstWeaponDestroyedTriggered = true;
-            bossMechanicState.nextBombSpawnAt = new Date().getTime() + Math.max(350, Math.floor((bossLevelOneConfig.bombSpawnIntervalMs || 2200) * 0.5));
-        }
-
-        if (!boss.bossCombat.secondWeaponDestroyedTriggered && aliveCount <= 2) {
-            boss.bossCombat.secondWeaponDestroyedTriggered = true;
-            bossMechanicState.nextReinforcementSpawnAt = new Date().getTime() + Math.max(500, Math.floor((bossLevelOneConfig.reinforcementIntervalMs || 3200) * 0.55));
-        }
-    }
-
-    function clearThreatsAfterBossDefeat() {
+        clearStageSpawnScheduler();
         for (var i = 0; i < activeEnemies.length; i++) {
             if (activeEnemies[i] && activeEnemies[i].stopShooting) {
                 activeEnemies[i].stopShooting();
             }
-            if (activeEnemies[i]) {
-                activeEnemies[i].dead = true;
-            }
         }
         activeEnemies.splice(0, activeEnemies.length);
         evilShotsBuffer.splice(0, evilShotsBuffer.length);
-        resetBossMechanicState();
+        playerShotsBuffer.splice(0, playerShotsBuffer.length);
+        pendingStageSpawns = 0;
+        spawnedStageEnemies = 0;
+    }
+
+    function clearStageSpawnScheduler() {
+        if (stageSpawnTimeout) {
+            clearTimeout(stageSpawnTimeout);
+            stageSpawnTimeout = null;
+        }
+    }
+
+    function startSummary(message) {
+        stageState = 'summary';
+        stageMessage = message;
+        stageTransitionUntil = new Date().getTime() + stageSummaryDuration;
+        clearStageEntities();
+    }
+
+    function startCountdown(message) {
+        stageState = 'countdown';
+        stageMessage = message;
+        stageTransitionUntil = new Date().getTime() + stageCountdownDuration;
+        clearStageEntities();
+    }
+
+    function startCurrentStage() {
+        activeStageConfig = getCurrentStageConfig();
+        stageState = 'playing';
+        stageMessage = '';
+        spawnStageEnemies(activeStageConfig);
+    }
+
+    function spawnStageEnemies(stageConfig) {
+        clearStageSpawnScheduler();
+        pendingStageSpawns = stageConfig.enemyCount;
+        spawnedStageEnemies = 0;
+
+        if (stageConfig.type === 'boss') {
+            var bossEnemy = createBossByLevel(stageConfig);
+            activeEnemies.push(bossEnemy);
+            pendingStageSpawns = 0;
+            spawnedStageEnemies = 1;
+            return;
+        }
+
+        spawnNextEnemyWave(stageConfig);
+    }
+
+    function spawnNextEnemyWave(stageConfig) {
+        if (stageState !== 'playing' || pendingStageSpawns <= 0) {
+            clearStageSpawnScheduler();
+            return;
+        }
+
+        if (getAliveEnemiesCount() >= stageConfig.maxConcurrent) {
+            scheduleNextEnemyWave(stageConfig, 250);
+            return;
+        }
+
+        var enemy = createEnemyByType(stageConfig);
+        activeEnemies.push(enemy);
+        pendingStageSpawns--;
+        spawnedStageEnemies++;
+
+        if (pendingStageSpawns > 0) {
+            scheduleNextEnemyWave(stageConfig);
+        } else {
+            clearStageSpawnScheduler();
+        }
+    }
+
+    function scheduleNextEnemyWave(stageConfig, forceDelay) {
+        clearStageSpawnScheduler();
+        var delay = typeof forceDelay === 'number' ? forceDelay :
+            getRandomInRange(stageConfig.spawnDelayMin, stageConfig.spawnDelayMax);
+        stageSpawnTimeout = setTimeout(function() {
+            stageSpawnTimeout = null;
+            spawnNextEnemyWave(stageConfig);
+        }, delay);
     }
 
     function createEnemyByType(stageConfig) {
@@ -1550,31 +1053,34 @@ var game = (function () {
         var life = stageConfig.enemyLife + enemyType.lifeBonus;
         var shots = stageConfig.enemyShots + enemyType.shotsBonus;
         var speed = stageConfig.enemySpeed + enemyType.speedBonus;
-        var enemy = enemyEntityFactory.createEvil(life, shots, speed, enemyType.spriteIndex, selectedType, evilImages);
-        enemy.scoreBase = getEnemyTypeBaseScore(selectedType);
-        enemy.scorePhaseIndex = getGlobalPhaseIndex(currentLevel, currentPhase);
-        enemy.pointsToKill = enemy.scoreBase;
+        var enemy = new Evil(life, shots, speed, enemyType.spriteIndex, selectedType);
+        enemy.pointsToKill = stageConfig.enemyPoints + enemyType.pointsBonus;
         return enemy;
     }
 
-    function createBossByLevel(stageConfig, levelOverride) {
-        var bossLevel = typeof levelOverride === 'number' ? levelOverride : currentLevel;
-        var bossConfig = bossByLevel[bossLevel] || bossByLevel[1];
-        if (bossLevel === 1) {
-            resetBossMechanicState();
-        }
-        var boss = enemyEntityFactory.createFinalBoss(
+    function createBossByLevel(stageConfig) {
+        var bossConfig = bossByLevel[currentLevel] || bossByLevel[1];
+        var boss = new FinalBoss(
             stageConfig.bossLife + bossConfig.lifeBonus,
             stageConfig.bossShots + bossConfig.shotsBonus,
             stageConfig.bossSpeed + bossConfig.speedBonus,
             bossConfig.spriteIndex,
-            bossLevel,
-            bossImages
+            currentLevel
         );
-        boss.scoreBase = getBossBaseScore();
-        boss.scorePhaseIndex = getGlobalPhaseIndex(currentLevel, currentPhase);
-        boss.pointsToKill = boss.scoreBase;
+        boss.pointsToKill = stageConfig.bossPoints + bossConfig.pointsBonus;
         return boss;
+    }
+
+    function isStageCleared() {
+        if (pendingStageSpawns > 0 || stageSpawnTimeout) {
+            return false;
+        }
+        for (var i = 0; i < activeEnemies.length; i++) {
+            if (!activeEnemies[i].dead) {
+                return false;
+            }
+        }
+        return spawnedStageEnemies > 0;
     }
 
     function handleStageCleared() {
@@ -1582,20 +1088,33 @@ var game = (function () {
             openRewardSelector();
             return;
         }
-        stageManager.completeStageClear();
-        syncStageStateFromManager();
+
+        completeStageClear();
     }
 
-    function isBossWarningMessage() {
-        if (currentStageType !== 'boss' || !stageMessage) {
-            return false;
+    function completeStageClear() {
+        if (currentStageType === 'boss') {
+            if (currentLevel === totalLevels) {
+                saveFinalScore();
+                congratulations = true;
+                clearStageEntities();
+                return;
+            }
+            currentLevel++;
+            currentPhase = 1;
+            currentStageType = 'normal';
+            startSummary('Nivel completado. Preparando Nivel ' + currentLevel);
+            return;
         }
-        return stageMessage.toLowerCase().indexOf('ahi viene el jefe') !== -1;
-    }
 
-    function getBossWarningZoomScale() {
-        var pulse = Math.sin(new Date().getTime() / 180);
-        return 1 + (pulse * 0.12);
+        if (currentPhase === phasesPerLevel) {
+            currentStageType = 'boss';
+            startSummary('Fase ' + phasesPerLevel + ' completada. Se acerca el jefe');
+            return;
+        }
+
+        currentPhase++;
+        startSummary('Fase completada. Preparando Fase ' + currentPhase);
     }
 
     function drawTransitionOverlay() {
@@ -1619,33 +1138,15 @@ var game = (function () {
             outlineWidth: 3
         });
 
-        var messageY = overlayY + 86;
-        if (isBossWarningMessage()) {
-            var zoomScale = getBossWarningZoomScale();
-            bufferctx.save();
-            bufferctx.translate(centerX, messageY);
-            bufferctx.scale(zoomScale, zoomScale);
-            drawArcadeText(stageMessage.toUpperCase(), 0, 0, {
-                color: '#fff3a3',
-                font: "bold 22px 'Courier New', monospace",
-                align: 'center',
-                glowColor: arcadeTheme.accentBoss,
-                glowBlur: 11,
-                outlineColor: arcadeTheme.outline,
-                outlineWidth: 3
-            });
-            bufferctx.restore();
-        } else {
-            drawArcadeText(stageMessage.toUpperCase(), centerX, messageY, {
-                color: arcadeTheme.primaryText,
-                font: "bold 20px 'Courier New', monospace",
-                align: 'center',
-                glowColor: accentColor,
-                glowBlur: 8,
-                outlineColor: arcadeTheme.outline,
-                outlineWidth: 3
-            });
-        }
+        drawArcadeText(stageMessage.toUpperCase(), centerX, overlayY + 86, {
+            color: arcadeTheme.primaryText,
+            font: "bold 20px 'Courier New', monospace",
+            align: 'center',
+            glowColor: accentColor,
+            glowBlur: 8,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 3
+        });
 
         if (stageState === 'countdown') {
             var millisLeft = stageTransitionUntil - new Date().getTime();
@@ -1672,7 +1173,139 @@ var game = (function () {
     }
 
     function Player(life, score) {
-        return playerEntityFactory.createPlayer(life, score);
+        var settings = {
+            marginBottom : 40,
+            defaultWidth : 52,
+            defaultHeight : 66,
+            recoilDurationMs: 90,
+            recoilPixels: 4,
+            shootFxDurationMs: 95
+        };
+        player = new Image();
+        player.src = 'images/bueno.png';
+        player.posX = (canvas.width / 2) - (settings.defaultWidth / 2);
+        player.posY = canvas.height - (player.height == 0 ? settings.defaultHeight : player.height) - settings.marginBottom;
+        player.width = player.width || settings.defaultWidth;
+        player.height = player.height || settings.defaultHeight;
+        player.life = life;
+        player.score = score;
+        player.dead = false;
+        player.speed = playerSpeed;
+        player.invulnerableUntil = 0;
+        player.animationState = 'idle';
+        player.animationStartedAt = new Date().getTime();
+        player.recoilOffsetY = 0;
+        player.recoilUntil = 0;
+        player.shootFxUntil = 0;
+
+        player.triggerShotFeedback = function() {
+            var currentTime = new Date().getTime();
+            player.recoilUntil = currentTime + settings.recoilDurationMs;
+            player.shootFxUntil = currentTime + settings.shootFxDurationMs;
+        };
+
+        player.updateVisualFeedback = function() {
+            var currentTime = new Date().getTime();
+            if (currentTime < player.recoilUntil) {
+                var recoilRemainingRatio = (player.recoilUntil - currentTime) / settings.recoilDurationMs;
+                player.recoilOffsetY = Math.round(settings.recoilPixels * recoilRemainingRatio);
+            } else {
+                player.recoilOffsetY = 0;
+            }
+        };
+
+        player.getShotFxRatio = function() {
+            var currentTime = new Date().getTime();
+            if (currentTime >= player.shootFxUntil) {
+                return 0;
+            }
+            return (player.shootFxUntil - currentTime) / settings.shootFxDurationMs;
+        };
+
+        player.updateAnimationState = function(nextState) {
+            var normalizedState = nextState === 'left' || nextState === 'right' ? nextState : 'idle';
+            if (player.animationState !== normalizedState) {
+                player.animationState = normalizedState;
+                player.animationStartedAt = new Date().getTime();
+            }
+        };
+
+        player.getCurrentFrameImage = function() {
+            if (player.dead) {
+                return playerKilledImage;
+            }
+
+            var frames = playerAnimations[player.animationState] || playerAnimations.idle;
+            var elapsedMs = new Date().getTime() - player.animationStartedAt;
+            var frameIndex = Math.floor(elapsedMs / playerAnimations.frameDurationMs) % playerAnimations.frameCount;
+            var frameImage = frames[frameIndex] || playerAnimations.idle[0] || player;
+
+            if (frameImage && frameImage.width) {
+                player.width = frameImage.width;
+                player.height = frameImage.height;
+            }
+
+            return frameImage;
+        };
+
+        var shoot = function () {
+            if (nextPlayerShot < now || now == 0) {
+                playerShot = new PlayerShot(player.posX + (player.width / 2), player.posY);
+                playerShot.damage = playerShotDamage;
+                playerShot.scale = playerShotScale;
+                playerShot.remainingBounces = runUpgrades.bounceStacks;
+                playerShot.isHoming = runUpgrades.homingStacks > 0;
+                playerShot.vx = 0;
+                playerShot.vy = -playerShot.speed;
+                playerShot.add();
+                player.triggerShotFeedback();
+                now += playerShotDelay;
+                nextPlayerShot = now + playerShotDelay;
+            } else {
+                now = new Date().getTime();
+            }
+        };
+
+        player.doAnything = function() {
+            var initialPosX = player.posX;
+
+            if (player.dead)
+                return;
+            if (keyPressed.left && player.posX > 5)
+                player.posX -= player.speed;
+            if (keyPressed.right && player.posX < (canvas.width - player.width - 5))
+                player.posX += player.speed;
+            if (keyPressed.fire)
+                shoot();
+
+            var movedDelta = player.posX - initialPosX;
+            if (movedDelta < 0) {
+                player.updateAnimationState('left');
+            } else if (movedDelta > 0) {
+                player.updateAnimationState('right');
+            } else {
+                player.updateAnimationState('idle');
+            }
+        };
+
+        player.killPlayer = function() {
+            if (this.life > 1) {
+                this.dead = true;
+                evilShotsBuffer.splice(0, evilShotsBuffer.length);
+                playerShotsBuffer.splice(0, playerShotsBuffer.length);
+                this.src = playerKilledImage.src;
+                setTimeout(function () {
+                    player = new Player(player.life - 1, player.score);
+                }, 500);
+
+            } else {
+                saveFinalScore();
+                clearStageEntities();
+                youLoose = true;
+            }
+        };
+
+        return player;
     }
 
     /******************************* DISPAROS *******************************/
@@ -1700,7 +1333,39 @@ var game = (function () {
     function EvilShot (x, y) {
         Object.getPrototypeOf(EvilShot.prototype).constructor.call(this, x, y, evilShotsBuffer, evilShotImage);
         this.isHittingPlayer = function() {
-            return circleRectOverlap(getPlayerHitCircle(), getEnemyShotBounds(this));
+            if (!player || player.dead) {
+                return false;
+            }
+
+            var collisionSystem = window.FlubberCollisionSystem || null;
+            if (collisionSystem &&
+                typeof collisionSystem.getPlayerHitCircle === 'function' &&
+                typeof collisionSystem.getEnemyShotBounds === 'function' &&
+                typeof collisionSystem.circleRectOverlap === 'function') {
+                return collisionSystem.circleRectOverlap(
+                    collisionSystem.getPlayerHitCircle(player, player),
+                    collisionSystem.getEnemyShotBounds(this)
+                );
+            }
+
+            var width = player.width || 52;
+            var height = player.height || 66;
+            var circle = {
+                x: player.posX + (width / 2),
+                y: player.posY + Math.round(height * 0.44),
+                radius: Math.max(12, Math.round(Math.min(width, height) * 0.28))
+            };
+            var shotRect = {
+                left: this.posX,
+                top: this.posY,
+                right: this.posX + 10,
+                bottom: this.posY + 20
+            };
+            var closestX = Math.max(shotRect.left, Math.min(circle.x, shotRect.right));
+            var closestY = Math.max(shotRect.top, Math.min(circle.y, shotRect.bottom));
+            var deltaX = circle.x - closestX;
+            var deltaY = circle.y - closestY;
+            return (deltaX * deltaX) + (deltaY * deltaY) <= (circle.radius * circle.radius);
         };
     }
 
@@ -1710,21 +1375,580 @@ var game = (function () {
 
 
     /******************************* ENEMIGOS *******************************/
-    // Enemy, Evil and FinalBoss now live in js/enemy-entity.js.
+    function Enemy(life, shots, enemyImages, spriteIndex) {
+        this.fixedSpriteIndex = typeof spriteIndex === 'number' ? spriteIndex : null;
+        this.image = enemyImages.animation[this.fixedSpriteIndex !== null ? this.fixedSpriteIndex : 0];
+        this.imageNumber = 1;
+        this.animation = 0;
+        this.spriteWidth = this.image.width || 40;
+        this.spriteHeight = this.image.height || 40;
+        this.posX = getRandomNumber(Math.max(1, canvas.width - this.spriteWidth));
+        this.posY = -50;
+        this.life = life;
+        this.speed = defaultEnemySpeed;
+        this.shots = shots;
+        this.dead = false;
+        this.shotTimeoutId = null;
+        this.slowUntil = 0;
+        this.zigzagMotion = false;
+        this.zigzagDirection = 1;
+        this.zigzagHorizontalSpeed = 0;
+        this.zigzagVerticalSpeed = 0;
+        this.circularMotion = false;
+        this.circularAngle = 0;
+        this.circularRadiusX = 0;
+        this.circularRadiusY = 0;
+        this.circularCenterX = 0;
+        this.circularCenterY = 0;
+        this.circularOrbitSpeed = 0;
+        this.circularVerticalDrift = 0;
+        this.hunterMotion = false;
+        this.hunterState = 'enter';
+        this.hunterEntryTargetY = 80;
+        this.hunterChargeUntil = 0;
+        this.hunterChargeCenterX = 0;
+        this.hunterChargePhase = 0;
+        this.hunterChargeAmplitude = 26;
+        this.hunterDashStartX = 0;
+        this.hunterDashStartY = 0;
+        this.hunterDashTargetX = 0;
+        this.hunterDashTargetY = 0;
+        this.hunterDashSpeed = 5;
+        this.hunterReturnSpeed = 3.2;
+        this.hunterZigzagUntil = 0;
+        this.hunterBurstShotsRemaining = 0;
+        this.hunterNextBurstAt = 0;
+        this.strikeMotion = false;
+        this.strikePhase = 0;
+        this.strikeDirection = 1;
+        this.strikePhaseUntil = 0;
+        this.strikeHorizontalSpeed = 0;
+        this.strikeVerticalSpeed = 0;
+        this.strikeHorizontalDuration = 0;
+        this.strikeVerticalDuration = 0;
+        this.strikeForceVerticalNearPlayer = false;
+        this.sentinelMotion = false;
+        this.sentinelState = 'enter';
+        this.sentinelEnterTargetY = 90;
+        this.sentinelHoldUntil = 0;
+        this.sentinelDiagonalUntil = 0;
+        this.sentinelDiagDirX = 1;
+        this.sentinelHorizontalSpeed = 0;
+        this.sentinelVerticalSpeed = 0;
+        this.sentinelStaticDuration = 850;
+        this.sentinelDiagonalDuration = 1400;
+        this.sentinelFanShots = 5;
+        this.sentinelFanSpread = 1.7;
+
+        var desplazamientoHorizontal = minHorizontalOffset +
+            getRandomNumber(maxHorizontalOffset - minHorizontalOffset);
+        var maxTravel = Math.max(minHorizontalOffset, Math.min(desplazamientoHorizontal, canvas.width - this.spriteWidth));
+        var maxStartX = Math.max(1, canvas.width - this.spriteWidth - maxTravel);
+        this.minX = getRandomNumber(maxStartX);
+        this.maxX = this.minX + maxTravel;
+        this.direction = 'D';
+
+
+        this.kill = function() {
+            this.stopShooting();
+            this.dead = true;
+            this.image = enemyImages.killed;
+        };
+
+        function moveTowards(enemy, targetX, targetY, speed) {
+            var deltaX = targetX - enemy.posX;
+            var deltaY = targetY - enemy.posY;
+            var distance = Math.sqrt((deltaX * deltaX) + (deltaY * deltaY));
+            if (distance <= speed || distance === 0) {
+                enemy.posX = targetX;
+                enemy.posY = targetY;
+                return true;
+            }
+            enemy.posX += (deltaX / distance) * speed;
+            enemy.posY += (deltaY / distance) * speed;
+            return false;
+        }
+
+        function fireVerticalShot(enemy) {
+            if (enemy.dead || stageState !== 'playing') {
+                return;
+            }
+            if (enemy.enemyType !== 3 && enemy.shots <= 0) {
+                return;
+            }
+            var centerX = enemy.posX + (enemy.image.width / 2) - 5;
+            var baseY = enemy.posY + enemy.image.height;
+            var shot = new EvilShot(centerX, baseY);
+            shot.vx = 0;
+            shot.add();
+            if (enemy.enemyType !== 3) {
+                enemy.shots--;
+            }
+        }
+
+        function updateHunterMovement(enemy, movementSpeed) {
+            var nowTime = new Date().getTime();
+            if (enemy.hunterState === 'enter') {
+                enemy.posY += Math.max(0.9, movementSpeed);
+                if (enemy.posY >= enemy.hunterEntryTargetY) {
+                    enemy.posY = enemy.hunterEntryTargetY;
+                    enemy.hunterState = 'charge';
+                    enemy.hunterChargeCenterX = enemy.posX;
+                    enemy.hunterChargePhase = 0;
+                    enemy.hunterChargeUntil = nowTime + 700;
+                }
+                return;
+            }
+
+            if (enemy.hunterState === 'charge') {
+                enemy.hunterChargePhase += 0.35;
+                enemy.posY += Math.max(0.12, movementSpeed * 0.12);
+                enemy.posX = enemy.hunterChargeCenterX + Math.sin(enemy.hunterChargePhase) * enemy.hunterChargeAmplitude;
+                if (enemy.posX < 0) {
+                    enemy.posX = 0;
+                } else if (enemy.posX > (canvas.width - enemy.spriteWidth)) {
+                    enemy.posX = canvas.width - enemy.spriteWidth;
+                }
+                if (nowTime >= enemy.hunterChargeUntil) {
+                    enemy.hunterDashStartX = enemy.posX;
+                    enemy.hunterDashStartY = enemy.posY;
+                    enemy.hunterDashTargetX = player ? player.posX + (player.width / 2) - (enemy.spriteWidth / 2) : enemy.posX;
+                    enemy.hunterDashTargetY = player ? player.posY + (player.height / 2) - (enemy.spriteHeight / 2) : (enemy.posY + 120);
+                    if (enemy.hunterDashTargetX < 0) {
+                        enemy.hunterDashTargetX = 0;
+                    } else if (enemy.hunterDashTargetX > (canvas.width - enemy.spriteWidth)) {
+                        enemy.hunterDashTargetX = canvas.width - enemy.spriteWidth;
+                    }
+                    if (enemy.hunterDashTargetY < -enemy.spriteHeight) {
+                        enemy.hunterDashTargetY = -enemy.spriteHeight;
+                    }
+                    enemy.hunterState = 'dash';
+                }
+                return;
+            }
+
+            if (enemy.hunterState === 'dash') {
+                var reachedTarget = moveTowards(enemy, enemy.hunterDashTargetX, enemy.hunterDashTargetY,
+                    Math.max(4.2, enemy.hunterDashSpeed));
+                if (reachedTarget) {
+                    enemy.hunterState = 'return';
+                }
+                return;
+            }
+
+            if (enemy.hunterState === 'return') {
+                var returnedToOrigin = moveTowards(enemy, enemy.hunterDashStartX, enemy.hunterDashStartY,
+                    Math.max(2.6, enemy.hunterReturnSpeed));
+                if (returnedToOrigin) {
+                    enemy.hunterState = 'zigzag';
+                    enemy.hunterZigzagUntil = nowTime + 1400;
+                    enemy.hunterBurstShotsRemaining = 2;
+                    enemy.hunterNextBurstAt = nowTime + 120;
+                    enemy.zigzagDirection = getRandomNumber(2) === 0 ? -1 : 1;
+                }
+                return;
+            }
+
+            if (enemy.hunterState === 'zigzag') {
+                var horizontalSpeed = enemy.zigzagHorizontalSpeed || Math.max(1.4, movementSpeed * 1.15);
+                var verticalSpeed = enemy.zigzagVerticalSpeed || Math.max(0.55, movementSpeed * 0.7);
+                enemy.posY += verticalSpeed;
+                enemy.posX += (horizontalSpeed * enemy.zigzagDirection);
+
+                if (enemy.posX <= 0) {
+                    enemy.posX = 0;
+                    enemy.zigzagDirection = 1;
+                } else if (enemy.posX >= (canvas.width - enemy.spriteWidth)) {
+                    enemy.posX = canvas.width - enemy.spriteWidth;
+                    enemy.zigzagDirection = -1;
+                }
+
+                if (enemy.hunterBurstShotsRemaining > 0 && nowTime >= enemy.hunterNextBurstAt) {
+                    fireVerticalShot(enemy);
+                    enemy.hunterBurstShotsRemaining--;
+                    enemy.hunterNextBurstAt = nowTime + 170;
+                }
+
+                if (nowTime >= enemy.hunterZigzagUntil) {
+                    enemy.hunterState = 'charge';
+                    enemy.hunterChargeCenterX = enemy.posX;
+                    enemy.hunterChargePhase = 0;
+                    enemy.hunterChargeUntil = nowTime + 700;
+                }
+            }
+        }
+
+        function updateStrikeMovement(enemy, movementSpeed) {
+            var nowTime = new Date().getTime();
+            var horizontalSpeed = enemy.strikeHorizontalSpeed || Math.max(1.4, movementSpeed * 1.35);
+            var verticalSpeed = enemy.strikeVerticalSpeed || Math.max(0.7, movementSpeed * 0.95);
+
+            var triggerY = player ? (player.posY - enemy.spriteHeight - 20) : canvas.height;
+            if (!enemy.strikeForceVerticalNearPlayer && enemy.posY >= triggerY) {
+                enemy.strikeForceVerticalNearPlayer = true;
+            }
+
+            if (enemy.strikeForceVerticalNearPlayer) {
+                enemy.posY += Math.max(verticalSpeed, movementSpeed);
+                return;
+            }
+
+            if (!enemy.strikePhaseUntil) {
+                enemy.strikePhaseUntil = nowTime + (enemy.strikePhase === 1 ? enemy.strikeVerticalDuration : enemy.strikeHorizontalDuration);
+            }
+
+            if (enemy.strikePhase === 1) {
+                enemy.posY += verticalSpeed;
+            } else {
+                var direction = enemy.strikePhase === 0 ? enemy.strikeDirection : -enemy.strikeDirection;
+                enemy.posX += (horizontalSpeed * direction);
+                if (enemy.posX <= 0) {
+                    enemy.posX = 0;
+                    enemy.strikePhaseUntil = nowTime;
+                } else if (enemy.posX >= (canvas.width - enemy.spriteWidth)) {
+                    enemy.posX = canvas.width - enemy.spriteWidth;
+                    enemy.strikePhaseUntil = nowTime;
+                }
+            }
+
+            if (nowTime >= enemy.strikePhaseUntil) {
+                if (enemy.strikePhase === 0) {
+                    enemy.strikePhase = 1;
+                } else if (enemy.strikePhase === 1) {
+                    enemy.strikePhase = 2;
+                } else {
+                    enemy.strikePhase = 0;
+                }
+                enemy.strikePhaseUntil = nowTime + (enemy.strikePhase === 1 ? enemy.strikeVerticalDuration : enemy.strikeHorizontalDuration);
+            }
+        }
+
+        function fireFanBurst(enemy) {
+            if (enemy.dead || stageState !== 'playing' || enemy.shots <= 0) {
+                return;
+            }
+
+            var totalShots = Math.max(3, enemy.sentinelFanShots || 5);
+            var spread = enemy.sentinelFanSpread || 1.7;
+            var step = totalShots > 1 ? (spread / (totalShots - 1)) : 0;
+            var startAngle = -(spread / 2);
+            var centerX = enemy.posX + (enemy.image.width / 2) - 5;
+            var baseY = enemy.posY + enemy.image.height;
+
+            for (var shotIndex = 0; shotIndex < totalShots; shotIndex++) {
+                var angle = startAngle + (step * shotIndex);
+                var fanShot = new EvilShot(centerX, baseY);
+                fanShot.vx = Math.sin(angle) * fanShot.speed * 0.45;
+                fanShot.vy = Math.max(1.8, Math.cos(angle) * fanShot.speed * 0.75);
+                fanShot.add();
+            }
+
+            enemy.shots--;
+        }
+
+        function updateSentinelMovement(enemy, movementSpeed) {
+            var nowTime = new Date().getTime();
+            var horizontalSpeed = enemy.sentinelHorizontalSpeed || Math.max(1.7, movementSpeed * 1.45);
+            var verticalSpeed = enemy.sentinelVerticalSpeed || Math.max(0.75, movementSpeed * 0.95);
+            
+            var triggerY = player ? (player.posY - enemy.spriteHeight - 20) : canvas.height;
+            if (!enemy.sentinelForceVerticalNearPlayer && enemy.posY >= triggerY) {
+                enemy.sentinelForceVerticalNearPlayer = true;
+            }
+            if (enemy.sentinelForceVerticalNearPlayer) {
+                enemy.posY += Math.max(verticalSpeed, movementSpeed);
+                return;
+            }
+
+            if (enemy.sentinelState === 'enter') {
+                enemy.posY += Math.max(0.9, movementSpeed);
+                if (enemy.posY >= enemy.sentinelEnterTargetY) {
+                    enemy.posY = enemy.sentinelEnterTargetY;
+                    enemy.sentinelState = 'static';
+                    enemy.sentinelHoldUntil = nowTime + enemy.sentinelStaticDuration;
+                }
+                return;
+            }
+
+            if (enemy.sentinelState === 'static') {
+                if (nowTime >= enemy.sentinelHoldUntil) {
+                    enemy.sentinelState = 'fan';
+                }
+                return;
+            }
+
+            if (enemy.sentinelState === 'fan') {
+                fireFanBurst(enemy);
+                enemy.sentinelState = 'diagonal';
+                enemy.sentinelDiagonalUntil = nowTime + enemy.sentinelDiagonalDuration;
+                enemy.sentinelDiagDirX = getRandomNumber(2) === 0 ? -1 : 1;
+                return;
+            }
+
+            if (enemy.sentinelState === 'diagonal') {
+                enemy.posX += horizontalSpeed * enemy.sentinelDiagDirX;
+                enemy.posY += verticalSpeed;
+
+                if (enemy.posX <= 0) {
+                    enemy.posX = 0;
+                    enemy.sentinelDiagDirX = 1;
+                } else if (enemy.posX >= (canvas.width - enemy.spriteWidth)) {
+                    enemy.posX = canvas.width - enemy.spriteWidth;
+                    enemy.sentinelDiagDirX = -1;
+                }
+
+                if (nowTime >= enemy.sentinelDiagonalUntil) {
+                    enemy.sentinelState = 'static';
+                    enemy.sentinelHoldUntil = nowTime + enemy.sentinelStaticDuration;
+                }
+            }
+        }
+
+        this.update = function () {
+            var movementSpeed = this.goDownSpeed;
+            if (this.slowUntil && new Date().getTime() < this.slowUntil) {
+                movementSpeed = movementSpeed * 0.6;
+            }
+            if (this.hunterMotion) {
+                updateHunterMovement(this, movementSpeed);
+            } else if (this.strikeMotion) {
+                updateStrikeMovement(this, movementSpeed);
+            } else if (this.sentinelMotion) {
+                updateSentinelMovement(this, movementSpeed);
+            } else if (this.zigzagMotion) {
+                var horizontalSpeed = this.zigzagHorizontalSpeed || Math.max(1.6, movementSpeed * 1.35);
+                var verticalSpeed = this.zigzagVerticalSpeed || Math.max(0.75, movementSpeed * 0.9);
+                this.posY += verticalSpeed;
+                this.posX += (horizontalSpeed * this.zigzagDirection);
+
+                if (this.posX <= 0) {
+                    this.posX = 0;
+                    this.zigzagDirection = 1;
+                } else if (this.posX >= (canvas.width - this.spriteWidth)) {
+                    this.posX = canvas.width - this.spriteWidth;
+                    this.zigzagDirection = -1;
+                }
+            } else if (this.circularMotion) {
+                var orbitSpeed = this.circularOrbitSpeed || Math.max(0.03, movementSpeed * 0.04);
+                this.circularAngle += orbitSpeed;
+                this.circularCenterY += this.circularVerticalDrift || Math.max(0.25, movementSpeed * 0.35);
+
+                this.posX = this.circularCenterX + Math.cos(this.circularAngle) * this.circularRadiusX - (this.spriteWidth / 2);
+                this.posY = this.circularCenterY + Math.sin(this.circularAngle) * this.circularRadiusY - (this.spriteHeight / 2);
+
+                if (this.posX < 0) {
+                    this.posX = 0;
+                } else if (this.posX > (canvas.width - this.spriteWidth)) {
+                    this.posX = canvas.width - this.spriteWidth;
+                }
+            } else {
+                this.posY += movementSpeed;
+                if (this.direction === 'D') {
+                    this.posX += movementSpeed;
+                    if (this.posX >= this.maxX) {
+                        this.posX = this.maxX;
+                        this.direction = 'I';
+                    }
+                } else {
+                    this.posX -= movementSpeed;
+                    if (this.posX <= this.minX) {
+                        this.posX = this.minX;
+                        this.direction = 'D';
+                    }
+                }
+            }
+            this.animation++;
+            if (this.animation > 5) {
+                this.animation = 0;
+                if (this.fixedSpriteIndex === null) {
+                    this.imageNumber ++;
+                    if (this.imageNumber > 8) {
+                        this.imageNumber = 1;
+                    }
+                    this.image = enemyImages.animation[this.imageNumber - 1];
+                } else {
+                    this.image = enemyImages.animation[this.fixedSpriteIndex];
+                }
+            }
+        };
+
+        this.isOutOfScreen = function() {
+            return this.posY > (canvas.height + 15);
+        };
+
+        var self = this;
+
+        function shoot(enemy) {
+            if (enemy.enemyType === 3 || enemy.enemyType === 5) {
+                return;
+            }
+            if (enemy.shots > 0 && !enemy.dead && stageState === 'playing') {
+                var centerX = enemy.posX + (enemy.image.width / 2) - 5;
+                var baseY = enemy.posY + enemy.image.height;
+                if (enemy.enemyType === 2) {
+                    var leftShot = new EvilShot(centerX - 8, baseY);
+                    leftShot.vx = -2.2;
+                    leftShot.add();
+
+                    var rightShot = new EvilShot(centerX + 8, baseY);
+                    rightShot.vx = 2.2;
+                    rightShot.add();
+                } else if (enemy.enemyType === 4) {
+                    var zigzagShot = new EvilShot(centerX, baseY);
+                    zigzagShot.vx = 0;
+                    zigzagShot.waveMotion = true;
+                    zigzagShot.waveBaseX = centerX;
+                    zigzagShot.wavePhase = 0;
+                    zigzagShot.waveAmplitude = 9;
+                    zigzagShot.waveFrequency = 0.55;
+                    zigzagShot.add();
+                } else {
+                    var disparo = new EvilShot(centerX, baseY);
+                    disparo.add();
+                }
+                enemy.shots --;
+                enemy.shotTimeoutId = setTimeout(function() {
+                    shoot(enemy);
+                }, getRandomNumber(3000));
+            }
+        }
+
+        this.stopShooting = function() {
+            if (self.shotTimeoutId) {
+                clearTimeout(self.shotTimeoutId);
+                self.shotTimeoutId = null;
+            }
+        };
+
+        self.shotTimeoutId = setTimeout(function() {
+            shoot(self);
+        }, 1000 + getRandomNumber(2500));
+
+        this.toString = function () {
+            return 'Enemigo con vidas:' + this.life + 'shotss: ' + this.shots + ' puntos por matar: ' + this.pointsToKill;
+        }
+
+    }
+
+    function Evil (vidas, disparos, velocidad, spriteIndex, enemyType) {
+        Object.getPrototypeOf(Evil.prototype).constructor.call(this, vidas, disparos, evilImages, spriteIndex);
+        this.speed = velocidad;
+        this.goDownSpeed = velocidad;
+        this.enemyType = enemyType || 1;
+        this.pointsToKill = 5;
+        if (this.enemyType === 1) {
+            this.zigzagMotion = true;
+            this.zigzagDirection = getRandomNumber(2) === 0 ? -1 : 1;
+            this.zigzagHorizontalSpeed = Math.max(1.7, this.goDownSpeed * 1.4);
+            this.zigzagVerticalSpeed = Math.max(0.8, this.goDownSpeed * 0.95);
+            this.minX = 0;
+            this.maxX = canvas.width - this.spriteWidth;
+            this.direction = this.zigzagDirection > 0 ? 'D' : 'I';
+        } else if (this.enemyType === 2) {
+            this.circularMotion = true;
+            this.circularAngle = getRandomNumber(360) * (Math.PI / 180);
+            this.circularRadiusX = 55 + getRandomNumber(40);
+            this.circularRadiusY = 35 + getRandomNumber(25);
+            this.circularOrbitSpeed = 0.03 + (this.goDownSpeed * 0.025);
+            this.circularVerticalDrift = Math.max(0.25, this.goDownSpeed * 0.35);
+            this.circularCenterX = this.spriteWidth + this.circularRadiusX +
+                getRandomNumber(Math.max(1, canvas.width - (this.circularRadiusX * 2) - (this.spriteWidth * 2)));
+            this.posY = -this.spriteHeight - getRandomNumber(60);
+            this.circularCenterY = this.posY + (this.spriteHeight / 2) - (Math.sin(this.circularAngle) * this.circularRadiusY);
+            this.posX = this.circularCenterX + Math.cos(this.circularAngle) * this.circularRadiusX - (this.spriteWidth / 2);
+        } else if (this.enemyType === 3) {
+            this.stopShooting();
+            this.hunterMotion = true;
+            this.hunterState = 'enter';
+            this.hunterEntryTargetY = 70 + getRandomNumber(110);
+            this.hunterChargeAmplitude = 20 + getRandomNumber(18);
+            this.hunterDashSpeed = Math.max(4.2, this.goDownSpeed * 3.8);
+            this.hunterReturnSpeed = Math.max(2.6, this.goDownSpeed * 2.4);
+            this.zigzagHorizontalSpeed = Math.max(1.5, this.goDownSpeed * 1.2);
+            this.zigzagVerticalSpeed = Math.max(0.6, this.goDownSpeed * 0.75);
+            this.posX = getRandomNumber(Math.max(1, canvas.width - this.spriteWidth));
+            this.posY = -this.spriteHeight - getRandomNumber(80);
+        } else if (this.enemyType === 4) {
+            this.strikeMotion = true;
+            this.strikePhase = 0;
+            this.strikeDirection = getRandomNumber(2) === 0 ? -1 : 1;
+            this.strikeHorizontalSpeed = Math.max(1.6, this.goDownSpeed * 1.4);
+            this.strikeVerticalSpeed = Math.max(0.75, this.goDownSpeed);
+            this.strikeHorizontalDuration = 1150 + getRandomNumber(420);
+            this.strikeVerticalDuration = 420 + getRandomNumber(180);
+            this.strikePhaseUntil = 0;
+            this.strikeForceVerticalNearPlayer = false;
+            this.posX = getRandomNumber(Math.max(1, canvas.width - this.spriteWidth));
+            this.posY = -this.spriteHeight - getRandomNumber(70);
+        } else if (this.enemyType === 5) {
+            this.stopShooting();
+            this.sentinelMotion = true;
+            this.sentinelState = 'enter';
+            this.sentinelEnterTargetY = 75 + getRandomNumber(95);
+            this.sentinelStaticDuration = 850 + getRandomNumber(250);
+            this.sentinelDiagonalDuration = 1300 + getRandomNumber(400);
+            this.sentinelHorizontalSpeed = Math.max(1.8, this.goDownSpeed * 1.55);
+            this.sentinelVerticalSpeed = Math.max(0.75, this.goDownSpeed);
+            this.sentinelFanShots = 5;
+            this.sentinelFanSpread = 1.7;
+            this.sentinelDiagDirX = getRandomNumber(2) === 0 ? -1 : 1;
+            this.sentinelForceVerticalNearPlayer = false;
+            this.posX = getRandomNumber(Math.max(1, canvas.width - this.spriteWidth));
+            this.posY = -this.spriteHeight - getRandomNumber(90);
+        }
+    }
+
+    Evil.prototype = Object.create(Enemy.prototype);
+    Evil.prototype.constructor = Evil;
+
+    function FinalBoss (vidas, disparos, velocidad, spriteIndex, bossLevel) {
+        Object.getPrototypeOf(FinalBoss.prototype).constructor.call(this, vidas, disparos, bossImages, spriteIndex);
+        this.speed = velocidad;
+        this.goDownSpeed = velocidad / 2;
+        this.bossLevel = bossLevel || 1;
+        this.pointsToKill = 20;
+    }
+
+    FinalBoss.prototype = Object.create(Enemy.prototype);
+    FinalBoss.prototype.constructor = FinalBoss;
     /******************************* FIN ENEMIGOS *******************************/
 
     function isEnemyHittingPlayer(enemy) {
-        if (isLevelOneBossEnemy(enemy)) {
-            var weaponBounds = getBossWeaponBounds(enemy);
-            var playerHitCircle = getPlayerHitCircle();
-            for (var i = 0; i < weaponBounds.length; i++) {
-                if (circleRectOverlap(playerHitCircle, weaponBounds[i])) {
-                    return true;
-                }
-            }
+        if (!enemy || enemy.dead || !player || player.dead) {
             return false;
         }
-        return circleRectOverlap(getPlayerHitCircle(), getEnemyBounds(enemy));
+
+        var collisionSystem = window.FlubberCollisionSystem || null;
+        if (collisionSystem &&
+            typeof collisionSystem.getPlayerHitCircle === 'function' &&
+            typeof collisionSystem.getEnemyBounds === 'function' &&
+            typeof collisionSystem.circleRectOverlap === 'function') {
+            return collisionSystem.circleRectOverlap(
+                collisionSystem.getPlayerHitCircle(player, player),
+                collisionSystem.getEnemyBounds(enemy)
+            );
+        }
+
+        var enemyWidth = (enemy.image && enemy.image.width) || enemy.spriteWidth || 40;
+        var enemyHeight = (enemy.image && enemy.image.height) || enemy.spriteHeight || 40;
+        var width = player.width || 52;
+        var height = player.height || 66;
+        var circle = {
+            x: player.posX + (width / 2),
+            y: player.posY + Math.round(height * 0.5),
+            radius: Math.max(12, Math.round(Math.min(width, height) * 0.2))
+        };
+        var rect = {
+            left: enemy.posX,
+            top: enemy.posY,
+            right: enemy.posX + enemyWidth,
+            bottom: enemy.posY + enemyHeight
+        };
+        var closestX = Math.max(rect.left, Math.min(circle.x, rect.right));
+        var closestY = Math.max(rect.top, Math.min(circle.y, rect.bottom));
+        var deltaX = circle.x - closestX;
+        var deltaY = circle.y - closestY;
+        return (deltaX * deltaX) + (deltaY * deltaY) <= (circle.radius * circle.radius);
     }
 
     function isAnyEnemyHittingPlayer() {
@@ -1737,50 +1961,24 @@ var game = (function () {
     }
 
     function checkCollisions(shot) {
-        var shotBounds = getPlayerShotBounds(shot);
         for (var i = 0; i < activeEnemies.length; i++) {
             var enemy = activeEnemies[i];
-            if (enemy.dead) {
-                continue;
-            }
-
-            var bossWeaponHit = null;
-            if (isLevelOneBossEnemy(enemy)) {
-                bossWeaponHit = getBossWeaponHit(enemy, shotBounds);
-                if (!bossWeaponHit) {
-                    continue;
-                }
-            } else if (!rectsOverlap(shotBounds, getEnemyBounds(enemy))) {
-                continue;
-            }
-
-            if (!enemy.dead) {
+            var shotWidth = Math.max(10, Math.round(10 * (shot.scale || 1)));
+            var shotHeight = Math.max(18, Math.round(20 * (shot.scale || 1)));
+            var shotLeft = shot.posX - (shotWidth / 2);
+            var shotRight = shotLeft + shotWidth;
+            var shotTop = shot.posY;
+            var shotBottom = shotTop + shotHeight;
+            if (!enemy.dead && shotLeft <= (enemy.posX + enemy.image.width) && shotRight >= enemy.posX &&
+                shotTop <= (enemy.posY + enemy.image.height) && shotBottom >= enemy.posY) {
                 var damage = shot.damage || playerShotDamage || 1;
-                if (bossWeaponHit) {
-                    var weapon = enemy.bossCombat.weapons[bossWeaponHit.index];
-                    if (weapon && !weapon.destroyed) {
-                        weapon.life -= damage;
-                        if (weapon.life <= 0) {
-                            weapon.destroyed = true;
-                            player.score += Math.max(1, bossLevelOneConfig.weaponBonusScore || 8);
-                            onBossWeaponDestroyed(enemy);
-                        }
-                    }
-                    enemy.life = getAliveBossWeaponsCount(enemy);
-                } else {
-                    enemy.life -= damage;
-                }
-
+                enemy.life -= damage;
                 if (runUpgrades.slowStacks > 0) {
                     enemy.slowUntil = new Date().getTime() + 2500;
                 }
-
                 if (enemy.life <= 0) {
                     enemy.kill();
-                    player.score += getScoreToAward(enemy);
-                    if (isLevelOneBossEnemy(enemy)) {
-                        clearThreatsAfterBossDefeat();
-                    }
+                    player.score += Math.round(enemy.pointsToKill * playerScoreMultiplier);
                 }
 
                 if ((shot.remainingBounces || 0) > 0) {
@@ -1788,12 +1986,12 @@ var game = (function () {
                     shot.isHoming = false;
                     shot.vy = -Math.max(2, shot.speed * 0.75);
                     shot.vx = getBounceHorizontalSpeed(shot, enemy);
-                    shot.posX = enemy.posX + (enemy.spriteWidth / 2);
-                    shot.posY = enemy.posY - shotBounds.height - 2;
+                    shot.posX = enemy.posX + (enemy.image.width / 2);
+                    shot.posY = enemy.posY - shotHeight - 2;
                     return 'keep';
                 }
 
-                shot.deleteShot(parseInt(shot.identifier, 10));
+                shot.deleteShot(parseInt(shot.identifier));
                 return false;
             }
         }
@@ -1929,19 +2127,6 @@ var game = (function () {
 
     function update() {
 
-        playerDamageAppliedThisFrame = false;
-
-        syncStageStateFromManager();
-
-        if (damageSystem) {
-            damageSystem.update(new Date().getTime());
-        }
-
-        if (!assetsReady) {
-            drawLoadingScreen();
-            return;
-        }
-
         drawBackground();
         updateRewardEffects();
 
@@ -1964,36 +2149,50 @@ var game = (function () {
         if (stageState !== 'playing') {
             drawTransitionOverlay();
             showLifeAndScore();
-            stageManager.processTransitionTick(new Date().getTime());
-            syncStageStateFromManager();
+            if (new Date().getTime() >= stageTransitionUntil) {
+                if (stageState === 'summary') {
+                    startCountdown('Preparate para la siguiente etapa');
+                } else if (stageState === 'countdown') {
+                    startCurrentStage();
+                }
+            }
             return;
         }
 
-        bufferctx.drawImage(player.dead ? playerKilledImage : player, player.posX, player.posY);
+        if (player.updateVisualFeedback) {
+            player.updateVisualFeedback();
+        }
+        var playerDrawY = player.posY + (player.recoilOffsetY || 0);
+        bufferctx.drawImage(player.getCurrentFrameImage ? player.getCurrentFrameImage() : player, player.posX, playerDrawY);
+        drawPlayerShotFeedback(player, playerDrawY);
         for (var e = 0; e < activeEnemies.length; e++) {
             var enemy = activeEnemies[e];
-            if (enemy && !enemy.dead) {
+            if (enemy) {
                 bufferctx.drawImage(enemy.image, Math.round(enemy.posX), Math.round(enemy.posY));
             }
         }
 
         updateEnemies();
 
-        updateBossMechanics();
-
-        shotRuntime.updatePlayerShots();
-
-        if (!player.dead && isAnyEnemyHittingPlayer()) {
-            handlePlayerDamageOncePerFrame('contact');
+        for (var j = 0; j < playerShotsBuffer.length; j++) {
+            var disparoBueno = playerShotsBuffer[j];
+            updatePlayerShot(disparoBueno, j);
         }
 
-        shotRuntime.updateEnemyShots();
+        if (!player.dead && isAnyEnemyHittingPlayer()) {
+            handlePlayerDamage(false);
+        } else {
+            for (var i = 0; i < evilShotsBuffer.length; i++) {
+                var evilShot = evilShotsBuffer[i];
+                updateEvilShot(evilShot, i);
+            }
+        }
 
         if (debugHitboxes) {
             drawDebugHitboxes();
         }
 
-        if (stageManager.isStageCleared()) {
+        if (isStageCleared()) {
             handleStageCleared();
             return;
         }
@@ -2003,23 +2202,81 @@ var game = (function () {
         playerAction();
     }
 
+    function updatePlayerShot(playerShot, id) {
+        if (playerShot) {
+            playerShot.identifier = id;
+            if (playerShot.isHoming && !(playerShot.vx || 0)) {
+                steerPlayerShot(playerShot);
+            }
+            var collisionResult = checkCollisions(playerShot);
+            if (collisionResult === true || collisionResult === 'keep') {
+                if (isPlayerShotInBounds(playerShot)) {
+                    movePlayerShot(playerShot);
+                    drawPlayerShot(playerShot);
+                } else {
+                    playerShot.deleteShot(parseInt(playerShot.identifier));
+                }
+            }
+        }
+    }
+
+    function movePlayerShot(playerShot) {
+        var vx = typeof playerShot.vx === 'number' ? playerShot.vx : 0;
+        var vy = typeof playerShot.vy === 'number' ? playerShot.vy : -playerShot.speed;
+        playerShot.posX += vx;
+        playerShot.posY += vy;
+    }
+
+    function isPlayerShotInBounds(playerShot) {
+        var width = Math.max(10, Math.round(10 * (playerShot.scale || 1)));
+        var height = Math.max(18, Math.round(20 * (playerShot.scale || 1)));
+        return playerShot.posY > -height &&
+            playerShot.posX > -width &&
+            playerShot.posX < (canvas.width + width);
+    }
+
+    function updateEvilShot(evilShot, id) {
+        if (evilShot) {
+            evilShot.identifier = id;
+            if (player.dead) {
+                return;
+            }
+            if (!evilShot.isHittingPlayer()) {
+                var vx = typeof evilShot.vx === 'number' ? evilShot.vx : 0;
+                var vy = typeof evilShot.vy === 'number' ? evilShot.vy : evilShot.speed;
+                if (evilShot.waveMotion) {
+                    evilShot.waveBaseX = (typeof evilShot.waveBaseX === 'number' ? evilShot.waveBaseX : evilShot.posX) + vx;
+                    evilShot.wavePhase = (evilShot.wavePhase || 0) + (evilShot.waveFrequency || 0.5);
+                    evilShot.posX = evilShot.waveBaseX + Math.sin(evilShot.wavePhase) * (evilShot.waveAmplitude || 8);
+                } else {
+                    evilShot.posX += vx;
+                }
+                evilShot.posY += vy;
+                if (evilShot.posY <= canvas.height && evilShot.posX >= -40 && evilShot.posX <= (canvas.width + 40)) {
+                    bufferctx.drawImage(evilShot.image, evilShot.posX, evilShot.posY);
+                } else {
+                    evilShot.deleteShot(parseInt(evilShot.identifier));
+                }
+            } else {
+                handlePlayerDamage(true);
+                evilShot.deleteShot(parseInt(evilShot.identifier));
+            }
+        }
+    }
+
     function drawBackground() {
         var background = currentStageType === 'boss' ? bgBoss : bgMain;
         bufferctx.drawImage(background, 0, 0);
     }
 
     function updateEnemies() {
-        for (var i = activeEnemies.length - 1; i >= 0; i--) {
+        for (var i = 0; i < activeEnemies.length; i++) {
             var enemy = activeEnemies[i];
-            if (!enemy || enemy.dead) {
-                arrayRemove(activeEnemies, i);
-                continue;
-            }
-
-            enemy.update();
-            if (enemy.isOutOfScreen()) {
-                enemy.kill();
-                arrayRemove(activeEnemies, i);
+            if (!enemy.dead) {
+                enemy.update();
+                if (enemy.isOutOfScreen()) {
+                    enemy.kill();
+                }
             }
         }
     }
@@ -2029,7 +2286,7 @@ var game = (function () {
         if (!target) {
             return;
         }
-        var targetCenter = typeof target.targetX === 'number' ? target.targetX : (target.posX + (target.spriteWidth / 2));
+        var targetCenter = target.posX + (target.image.width / 2);
         var shotCenter = playerShot.posX;
         var steerAmount = 2 + runUpgrades.homingStacks;
         if (targetCenter > shotCenter) {
@@ -2047,32 +2304,8 @@ var game = (function () {
             if (enemy.dead) {
                 continue;
             }
-
-            var enemyCenter = enemy.posX + (enemy.spriteWidth / 2);
-            var enemyTop = enemy.posY;
-            if (isLevelOneBossEnemy(enemy)) {
-                var weaponBounds = getBossWeaponBounds(enemy);
-                if (!weaponBounds.length) {
-                    continue;
-                }
-
-                for (var w = 0; w < weaponBounds.length; w++) {
-                    var weaponCenterX = weaponBounds[w].left + (weaponBounds[w].width / 2);
-                    var weaponTop = weaponBounds[w].top;
-                    var weaponDistance = Math.abs(weaponCenterX - playerShot.posX) + Math.max(0, playerShot.posY - weaponTop);
-                    if (nearestDistance === null || weaponDistance < nearestDistance) {
-                        nearestDistance = weaponDistance;
-                        nearestEnemy = {
-                            enemy: enemy,
-                            targetX: weaponCenterX,
-                            targetY: weaponTop
-                        };
-                    }
-                }
-                continue;
-            }
-
-            var distance = Math.abs(enemyCenter - playerShot.posX) + Math.max(0, playerShot.posY - enemyTop);
+            var enemyCenter = enemy.posX + (enemy.image.width / 2);
+            var distance = Math.abs(enemyCenter - playerShot.posX) + Math.max(0, playerShot.posY - enemy.posY);
             if (nearestDistance === null || distance < nearestDistance) {
                 nearestDistance = distance;
                 nearestEnemy = enemy;
@@ -2089,7 +2322,7 @@ var game = (function () {
             if (enemy.dead || enemy === impactedEnemy) {
                 continue;
             }
-            var enemyCenter = enemy.posX + (enemy.spriteWidth / 2);
+            var enemyCenter = enemy.posX + (enemy.image.width / 2);
             var distance = Math.abs(enemyCenter - playerShot.posX);
             if (nearestDistance === null || distance < nearestDistance) {
                 nearestDistance = distance;
@@ -2099,70 +2332,74 @@ var game = (function () {
 
         var horizontalSpeed = Math.max(1.5, playerShot.speed * 0.65);
         if (nearestEnemy) {
-            return (nearestEnemy.posX + (nearestEnemy.spriteWidth / 2)) >= playerShot.posX ? horizontalSpeed : -horizontalSpeed;
+            return (nearestEnemy.posX + (nearestEnemy.image.width / 2)) >= playerShot.posX ? horizontalSpeed : -horizontalSpeed;
         }
         return getRandomNumber(2) === 0 ? -horizontalSpeed : horizontalSpeed;
     }
 
-    function handlePlayerDamage(source) {
-        if (damageSystem) {
-            damageSystem.handleDamage(source);
-        }
+    function drawPlayerShot(playerShot) {
+        var width = Math.max(10, Math.round(10 * (playerShot.scale || 1)));
+        var height = Math.max(18, Math.round(20 * (playerShot.scale || 1)));
+        bufferctx.drawImage(playerShot.image, playerShot.posX - (width / 2), playerShot.posY, width, height);
     }
 
-    function handlePlayerDamageOncePerFrame(source) {
-        if (playerDamageAppliedThisFrame) {
-            return false;
+    function drawPlayerShotFeedback(playerEntity, drawPosY) {
+        if (!playerEntity || playerEntity.dead || !playerEntity.getShotFxRatio) {
+            return;
         }
-        playerDamageAppliedThisFrame = true;
-        handlePlayerDamage(source);
-        return true;
+
+        var ratio = playerEntity.getShotFxRatio();
+        if (ratio <= 0) {
+            return;
+        }
+
+        var muzzleX = playerEntity.posX + (playerEntity.width / 2);
+        var muzzleY = drawPosY + Math.max(4, Math.round(playerEntity.height * 0.07));
+        var glowRadius = Math.max(6, Math.round(16 * ratio));
+        var coreRadius = Math.max(2, Math.round(5 * ratio));
+        var flashGradient = bufferctx.createRadialGradient(muzzleX, muzzleY, 1, muzzleX, muzzleY, glowRadius);
+        flashGradient.addColorStop(0, 'rgba(255, 250, 175, 0.95)');
+        flashGradient.addColorStop(0.45, 'rgba(255, 175, 45, 0.75)');
+        flashGradient.addColorStop(1, 'rgba(255, 95, 0, 0)');
+
+        bufferctx.save();
+        bufferctx.globalCompositeOperation = 'lighter';
+        bufferctx.fillStyle = flashGradient;
+        bufferctx.beginPath();
+        bufferctx.arc(muzzleX, muzzleY, glowRadius, 0, Math.PI * 2, false);
+        bufferctx.fill();
+
+        bufferctx.fillStyle = 'rgba(255, 250, 210, 0.95)';
+        bufferctx.beginPath();
+        bufferctx.arc(muzzleX, muzzleY, coreRadius, 0, Math.PI * 2, false);
+        bufferctx.fill();
+        bufferctx.restore();
+    }
+
+    function handlePlayerDamage(fromProjectile) {
+        var nowTime = new Date().getTime();
+        if (player.invulnerableUntil && nowTime < player.invulnerableUntil) {
+            return;
+        }
+        if (fromProjectile && runUpgrades.dodgeTaken) {
+            runUpgrades.dodgeTaken = false;
+            player.invulnerableUntil = nowTime + 800;
+            return;
+        }
+        if (runUpgrades.shieldStacks > 0) {
+            runUpgrades.shieldStacks--;
+            player.invulnerableUntil = nowTime + 800;
+            return;
+        }
+        player.invulnerableUntil = nowTime + 800;
+        player.killPlayer();
     }
 
     /******************************* MEJORES PUNTUACIONES (LOCALSTORAGE) *******************************/
     function saveFinalScore() {
-        localStorage.setItem(scoreStoragePrefix + getFinalScoreDate(), getTotalScore());
+        localStorage.setItem(getFinalScoreDate(), getTotalScore());
         showBestScores();
         removeNoBestScores();
-    }
-
-    function isLegacyScoreKey(key) {
-        return /^\d{2}\/\d{2}\/\d{4}\s\d{2}:\d{2}:\d{2}$/.test(key || '');
-    }
-
-    function isV2ScoreKey(key) {
-        return typeof key === 'string' && key.indexOf(scoreStoragePrefix) === 0;
-    }
-
-    function getScoreLabelFromKey(key) {
-        if (isV2ScoreKey(key)) {
-            return key.substring(scoreStoragePrefix.length);
-        }
-        return key;
-    }
-
-    function migrateScoreRankingIfNeeded() {
-        if (!window.localStorage) {
-            return;
-        }
-
-        if (localStorage.getItem(scoreSchemaStorageKey) === 'v2') {
-            return;
-        }
-
-        var keysToRemove = [];
-        for (var i = 0; i < localStorage.length; i++) {
-            var key = localStorage.key(i);
-            if (isLegacyScoreKey(key) || isV2ScoreKey(key)) {
-                keysToRemove.push(key);
-            }
-        }
-
-        for (var j = 0; j < keysToRemove.length; j++) {
-            localStorage.removeItem(keysToRemove[j]);
-        }
-
-        localStorage.setItem(scoreSchemaStorageKey, 'v2');
     }
 
     function getFinalScoreDate() {
@@ -2183,39 +2420,26 @@ var game = (function () {
     }
 
     function getBestScoreKeys() {
-        var allScoreEntries = getAllScoreEntries();
-        allScoreEntries.sort(function (a, b) { return b.score - a.score; });
-        allScoreEntries = allScoreEntries.slice(0, totalBestScoresToShow);
+        var bestScores = getAllScores();
+        bestScores.sort(function (a, b) {return b - a;});
+        bestScores = bestScores.slice(0, totalBestScoresToShow);
         var bestScoreKeys = [];
-        for (var j = 0; j < allScoreEntries.length; j++) {
-            bestScoreKeys.push(allScoreEntries[j].key);
+        for (var j = 0; j < bestScores.length; j++) {
+            var score = bestScores[j];
+            for (var i = 0; i < localStorage.length; i++) {
+                var key = localStorage.key(i);
+                if (parseInt(localStorage.getItem(key)) == score) {
+                    bestScoreKeys.push(key);
+                }
+            }
         }
         return bestScoreKeys.slice(0, totalBestScoresToShow);
     }
 
-    function getAllScoreEntries() {
-        var allEntries = [];
-        for (var i = 0; i < localStorage.length; i++) {
-            var key = localStorage.key(i);
-            if (!isV2ScoreKey(key)) {
-                continue;
-            }
-            var scoreValue = parseInt(localStorage.getItem(key), 10);
-            if (!isNaN(scoreValue)) {
-                allEntries.push({
-                    key: key,
-                    score: scoreValue
-                });
-            }
-        }
-        return allEntries;
-    }
-
     function getAllScores() {
         var all = [];
-        var entries = getAllScoreEntries();
-        for (var i = 0; i < entries.length; i++) {
-            all.push(entries[i].score);
+        for (var i=0; i < localStorage.length; i++) {
+            all[i] = (localStorage.getItem(localStorage.key(i)));
         }
         return all;
     }
@@ -2226,7 +2450,7 @@ var game = (function () {
         if (bestScoresList) {
             clearList(bestScoresList);
             for (var i=0; i < bestScores.length; i++) {
-                addListElement(bestScoresList, getScoreLabelFromKey(bestScores[i]), i==0?'negrita':null);
+                addListElement(bestScoresList, bestScores[i], i==0?'negrita':null);
                 addListElement(bestScoresList, localStorage.getItem(bestScores[i]), i==0?'negrita':null);
             }
         }
@@ -2262,7 +2486,7 @@ var game = (function () {
         var bestScoreKeys = getBestScoreKeys();
         for (var i=0; i < localStorage.length; i++) {
             var key = localStorage.key(i);
-            if (isV2ScoreKey(key) && !bestScoreKeys.containsElement(key)) {
+            if (!bestScoreKeys.containsElement(key)) {
                 scoresToRemove.push(key);
             }
         }
