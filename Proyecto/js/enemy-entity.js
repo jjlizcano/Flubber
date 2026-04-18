@@ -448,7 +448,31 @@ window.FlubberEnemyEntity = (function () {
                     return;
                 }
 
-                var pair = weaponPairs[combat.activePairIndex % weaponPairs.length];
+                var pair = null;
+                var pairIndex = combat.activePairIndex % weaponPairs.length;
+                for (var pairTry = 0; pairTry < weaponPairs.length; pairTry++) {
+                    var candidateIndex = (pairIndex + pairTry) % weaponPairs.length;
+                    var candidate = weaponPairs[candidateIndex];
+                    var hasActiveWeapon = false;
+                    for (var candidateWeapon = 0; candidateWeapon < candidate.length; candidateWeapon++) {
+                        var candidateWeaponIndex = candidate[candidateWeapon];
+                        var candidateWeaponState = combat.weapons[candidateWeaponIndex];
+                        if (candidateWeaponState && !candidateWeaponState.destroyed) {
+                            hasActiveWeapon = true;
+                            break;
+                        }
+                    }
+                    if (hasActiveWeapon) {
+                        pair = candidate;
+                        pairIndex = candidateIndex;
+                        break;
+                    }
+                }
+
+                if (!pair) {
+                    return;
+                }
+
                 var baseSpeed = Math.max(2.2, bossConfig.projectileSpeed || 3.8);
                 var spread = bossConfig.fanSpreadRadians || 0.52;
                 var diagonalSpeed = baseSpeed * (bossConfig.diagonalSpeedFactor || 0.95);
@@ -473,7 +497,7 @@ window.FlubberEnemyEntity = (function () {
                 if (!firedAny) {
                     return;
                 }
-                combat.activePairIndex = (combat.activePairIndex + 1) % weaponPairs.length;
+                combat.activePairIndex = (pairIndex + 1) % weaponPairs.length;
 
                 if (!enemy.dead && options.getStageState() === 'playing') {
                     enemy.shotTimeoutId = setTimeout(function () {

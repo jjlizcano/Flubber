@@ -33,6 +33,8 @@ arrayRemove = function (array, from) {
 };
 
 var game = (function () {
+    var gameConfig = window.FlubberGameConfig || {};
+    var progressionConfig = gameConfig.progression || {};
 
     // Variables globales a la aplicacion
     var canvas,
@@ -43,30 +45,31 @@ var game = (function () {
         playerShot,
         bgMain,
         bgBoss,
-        defaultEnemySpeed = 1,
-        totalLevels = 2,
-        phasesPerLevel = 10,
-        playerLife = 3,
-        shotSpeed = 5,
-        playerSpeed = 5,
+        defaultEnemySpeed = gameConfig.defaultEnemySpeed || 1,
+        totalLevels = progressionConfig.normalLevelsBeforeBoss || gameConfig.totalLevels || 10,
+        playerLife = gameConfig.playerLife || 3,
+        shotSpeed = gameConfig.shotSpeed || 5,
+        playerSpeed = gameConfig.playerSpeed || 5,
         currentLevel = 1,
-        currentPhase = 1,
+        currentProgressLevel = 1,
         currentStageType = 'normal',
         stageState = 'countdown',
         stageMessage = '',
         stageTransitionUntil = 0,
-        stageSummaryDuration = 2000,
-        stageCountdownDuration = 3000,
+        stageSummaryDuration = gameConfig.stageSummaryDuration || 2000,
+        stageCountdownDuration = gameConfig.stageCountdownDuration || 3000,
         activeStageConfig,
         pendingStageSpawns = 0,
         spawnedStageEnemies = 0,
         stageSpawnTimeout = null,
+        enemyEntityRuntime = null,
         youLoose = false,
         congratulations = false,
-        minHorizontalOffset = 100,
-        maxHorizontalOffset = 400,
+        minHorizontalOffset = gameConfig.minHorizontalOffset || 100,
+        maxHorizontalOffset = gameConfig.maxHorizontalOffset || 400,
         activeEnemies = [],
-        totalBestScoresToShow = 10, // las mejores puntuaciones que se mostraran
+        bossBombs = [],
+        totalBestScoresToShow = gameConfig.totalBestScoresToShow || 10, // las mejores puntuaciones que se mostraran
         playerShotsBuffer = [],
         evilShotsBuffer = [],
         evilShotImage,
@@ -113,7 +116,7 @@ var game = (function () {
         countdownFont: "bold 58px 'Courier New', monospace"
     };
 
-    var enemyTypeConfigs = {
+    var enemyTypeConfigs = gameConfig.enemyTypeConfigs || {
         1: { spriteIndex: 0, lifeBonus: 0, shotsBonus: 0, speedBonus: 0.14, pointsBonus: 0 },
         2: { spriteIndex: 1, lifeBonus: 1, shotsBonus: 0, speedBonus: 0.10, pointsBonus: 1 },
         3: { spriteIndex: 2, lifeBonus: 2, shotsBonus: 1, speedBonus: 0.08, pointsBonus: 3 },
@@ -121,7 +124,7 @@ var game = (function () {
         5: { spriteIndex: 4, lifeBonus: 4, shotsBonus: 1, speedBonus: 0.00, pointsBonus: 7 }
     };
 
-    var bossByLevel = {
+    var bossByLevel = gameConfig.bossByLevel || {
         1: { spriteIndex: 0, lifeBonus: 0, shotsBonus: 0, speedBonus: 0.00, pointsBonus: 0 },
         2: { spriteIndex: 4, lifeBonus: 4, shotsBonus: 4, speedBonus: 0.10, pointsBonus: 15 }
     };
@@ -251,11 +254,13 @@ var game = (function () {
         buffer.height = canvas.height;
         bufferctx = buffer.getContext('2d');
 
+        ensureEnemyEntityRuntime();
+
         loadDebugStartConfigFromUrl();
         applyDebugStartConfig();
         player = new Player(playerLife, 0);
         applyDebugRewardsForTest();
-        startCountdown('Nivel ' + currentLevel + ' - Fase ' + currentPhase);
+        startCountdown('Nivel ' + currentLevel);
 
         showLifeAndScore();
 
@@ -267,6 +272,55 @@ var game = (function () {
             requestAnimFrame(anim);
         }
         anim();
+    }
+
+    function getBossLevelOneConfig() {
+        var configRoot = window.FlubberGameConfig || {};
+        return configRoot.bossLevelOne || {};
+    }
+
+    function ensureEnemyEntityRuntime() {
+        if (enemyEntityRuntime) {
+            return enemyEntityRuntime;
+        }
+
+        if (!window.FlubberEnemyEntity || typeof window.FlubberEnemyEntity.create !== 'function') {
+            return null;
+        }
+
+        enemyEntityRuntime = window.FlubberEnemyEntity.create({
+            getBossLevelOneConfig: getBossLevelOneConfig,
+            getRandomNumber: getRandomNumber,
+            getCanvasWidth: function() {
+                return canvas ? canvas.width : 600;
+            },
+            getCanvasHeight: function() {
+                return canvas ? canvas.height : 700;
+            },
+            getImageDimension: function(image, fallback) {
+                return (image && image.width) || fallback;
+            },
+            getMinHorizontalOffset: function() {
+                return minHorizontalOffset;
+            },
+            getMaxHorizontalOffset: function() {
+                return maxHorizontalOffset;
+            },
+            getDefaultEnemySpeed: function() {
+                return defaultEnemySpeed;
+            },
+            getStageState: function() {
+                return stageState;
+            },
+            getPlayer: function() {
+                return player;
+            },
+            createEvilShot: function(x, y) {
+                return new EvilShot(x, y);
+            }
+        });
+
+        return enemyEntityRuntime;
     }
 
     function applyDebugRewardsForTest() {
@@ -331,6 +385,9 @@ var game = (function () {
 
         if (values.phase) {
             debugStartConfig.phase = parseInt(values.phase, 10) || 1;
+            if (!values.level) {
+                debugStartConfig.level = debugStartConfig.phase;
+            }
             debugStartConfig.enabled = true;
         }
 
@@ -354,14 +411,14 @@ var game = (function () {
     function applyDebugStartConfig() {
         if (!debugStartConfig || !debugStartConfig.enabled) {
             currentLevel = 1;
-            currentPhase = 1;
+            currentProgressLevel = 1;
             currentStageType = 'normal';
             debugHitboxes = false;
             return;
         }
 
         currentLevel = Math.min(totalLevels, Math.max(1, parseInt(debugStartConfig.level, 10) || 1));
-        currentPhase = Math.min(phasesPerLevel, Math.max(1, parseInt(debugStartConfig.phase, 10) || 1));
+        currentProgressLevel = currentLevel;
         currentStageType = debugStartConfig.stageType === 'boss' ? 'boss' : 'normal';
         debugHitboxes = !!debugStartConfig.hitboxes;
     }
@@ -412,6 +469,24 @@ var game = (function () {
 
         for (i = 0; i < activeEnemies.length; i++) {
             if (activeEnemies[i] && !activeEnemies[i].dead) {
+                if (activeEnemies[i].isBossLevelOne && activeEnemies[i].bossCombat) {
+                    var weaponBoxes = getBossWeaponHitboxes(activeEnemies[i]);
+                    for (var w = 0; w < weaponBoxes.length; w++) {
+                        var weaponBounds = weaponBoxes[w];
+                        bufferctx.save();
+                        bufferctx.strokeStyle = 'rgba(255, 70, 200, 0.95)';
+                        bufferctx.lineWidth = 2;
+                        bufferctx.strokeRect(
+                            weaponBounds.left,
+                            weaponBounds.top,
+                            weaponBounds.width,
+                            weaponBounds.height
+                        );
+                        bufferctx.restore();
+                    }
+                    continue;
+                }
+
                 var enemyBounds;
                 if (collisionSystem && typeof collisionSystem.getEnemyBounds === 'function') {
                     enemyBounds = collisionSystem.getEnemyBounds(activeEnemies[i]);
@@ -498,7 +573,7 @@ var game = (function () {
         var hudHeight = 56;
         drawArcadePanel(8, 8, canvas.width - 16, hudHeight, 0.65, 'rgba(255, 175, 0, 0.7)');
 
-        drawArcadeText('NIVEL ' + currentLevel + '  FASE ' + currentPhase, 18, 30, {
+        drawArcadeText('NIVEL ' + currentLevel, 18, 30, {
             color: arcadeTheme.primaryText,
             font: arcadeTheme.hudFont,
             align: 'left',
@@ -674,7 +749,7 @@ var game = (function () {
     }
 
     function generateRewardChoices() {
-        var weights = getRewardWeightsForStage(currentLevel, currentPhase);
+        var weights = getRewardWeightsForStage(currentLevel, currentLevel);
         var first = pickWeightedReward(weights, []);
         var excluded = first ? [first.id] : [];
         var second = pickWeightedReward(weights, excluded);
@@ -878,13 +953,13 @@ var game = (function () {
 
     function getCurrentStageConfig() {
         var isBossStage = currentStageType === 'boss';
-        var enemyCount = getEnemyCountForPhase(currentLevel, currentPhase);
-        var baseEnemyLife = 2 + (currentLevel - 1) + Math.floor((currentPhase - 1) / 2);
-        var baseEnemyShots = 3 + currentLevel + Math.floor((currentPhase - 1) / 2);
-        var baseEnemySpeed = defaultEnemySpeed + ((currentLevel - 1) * 0.22) + ((currentPhase - 1) * 0.05);
+        var enemyCount = getEnemyCountForLevel(currentLevel);
+        var baseEnemyLife = 2 + Math.floor((currentLevel - 1) / 2);
+        var baseEnemyShots = 4 + Math.floor((currentLevel - 1) / 2);
+        var baseEnemySpeed = defaultEnemySpeed + ((currentLevel - 1) * 0.08);
 
-        var enemyTypePool = getEnemyTypePool(currentLevel, currentPhase);
-        var maxConcurrent = getMaxConcurrentForStage(currentLevel, currentPhase);
+        var enemyTypePool = getEnemyTypePoolForLevel(currentLevel);
+        var maxConcurrent = getMaxConcurrentForLevel(currentLevel);
         var spawnDelay = getSpawnDelayForLevel(currentLevel);
 
         return {
@@ -893,87 +968,88 @@ var game = (function () {
             enemyLife: baseEnemyLife,
             enemyShots: baseEnemyShots,
             enemySpeed: baseEnemySpeed,
-            enemyPoints: 4 + currentLevel + currentPhase + Math.floor((currentPhase - 1) / 2),
+            enemyPoints: 5 + currentLevel + Math.floor((currentLevel - 1) / 2),
             enemyTypePool: enemyTypePool,
             maxConcurrent: isBossStage ? 1 : maxConcurrent,
             spawnDelayMin: isBossStage ? 0 : spawnDelay.min,
             spawnDelayMax: isBossStage ? 0 : spawnDelay.max,
-            bossLife: 10 + (currentLevel * 4),
-            bossShots: 20 + (currentLevel * 8),
-            bossSpeed: 0.8 + (currentLevel * 0.1),
-            bossPoints: 40 + (currentLevel * 10)
+            bossLife: 14 + (totalLevels * 3),
+            bossShots: 26 + (totalLevels * 6),
+            bossSpeed: 1.0,
+            bossPoints: 65 + (totalLevels * 6)
         };
     }
 
-    function getEnemyCountForPhase(level, phase) {
-        if (level === 1) {
-            return phase + 1;
+    function getEnemyCountForLevel(level) {
+        var enemyCountByLevel = progressionConfig.enemyCountByLevel || {
+            1: 6,
+            2: 8,
+            3: 9,
+            4: 10,
+            5: 11,
+            6: 12,
+            7: 13,
+            8: 14,
+            9: 15,
+            10: 16
+        };
+        if (enemyCountByLevel[level]) {
+            return enemyCountByLevel[level];
         }
-        if (level === 2) {
-            return phase + 11;
-        }
-        return phase + 11;
+        return enemyCountByLevel[totalLevels] || 10;
     }
 
-    function getEnemyTypePool(level, phase) {
-        if (level === 1) {
-            if (phase <= 3) {
-                return [1];
-            }
-            if (phase <= 7) {
-                return [1, 2];
-            }
-            return [1, 2, 3];
+    function getEnemyTypePoolForLevel(level) {
+        var configuredPool = progressionConfig.enemyTypePoolByLevel || {
+            1: [1],
+            2: [1, 2],
+            3: [1, 2],
+            4: [1, 2, 3],
+            5: [1, 2, 3],
+            6: [1, 2, 3, 4],
+            7: [1, 2, 3, 4],
+            8: [2, 3, 4, 5],
+            9: [2, 3, 4, 5],
+            10: [1, 2, 3, 4, 5]
+        };
+        var pool = configuredPool[level] || configuredPool[totalLevels] || [1];
+        if (!pool.length) {
+            return [1];
         }
-
-        if (phase <= 2) {
-            return [2, 3];
-        }
-        if (phase <= 4) {
-            return [2, 3, 4];
-        }
-        if (phase <= 7) {
-            return [2, 3, 4, 5];
-        }
-        return [1, 2, 3, 4, 5];
+        return pool;
     }
 
-    function getMaxConcurrentForStage(level, phase) {
-        if (level === 1) {
-            if (phase <= 3) {
-                return 3;
-            }
-            if (phase <= 7) {
-                return 4;
-            }
-            return 5;
+    function getMaxConcurrentForLevel(level) {
+        var maxConcurrentByLevel = progressionConfig.maxConcurrentByLevel || {
+            1: 3,
+            2: 4,
+            3: 4,
+            4: 5,
+            5: 5,
+            6: 6,
+            7: 6,
+            8: 7,
+            9: 7,
+            10: 8
+        };
+        if (maxConcurrentByLevel[level]) {
+            return maxConcurrentByLevel[level];
         }
-
-        if (phase <= 3) {
-            return 5;
-        }
-        if (phase <= 7) {
-            return 6;
-        }
-        return 7;
+        return maxConcurrentByLevel[totalLevels] || 5;
     }
 
     function getSpawnDelayForLevel(level) {
-        if (level === 1) {
-            return { min: 1200, max: 1800 };
+        if (level <= 3) {
+            return { min: 1200, max: 1700 };
         }
-        return { min: 900, max: 1400 };
+        if (level <= 6) {
+            return { min: 1050, max: 1550 };
+        }
+        return { min: 900, max: 1350 };
     }
 
     function shouldOpenRewardSelector() {
-        if (currentStageType === 'boss') {
-            // No abrir selector de recompensas para el último boss
-            if (currentLevel === totalLevels) {
-                return false;
-            }
-            return true;
-        }
-        return currentStageType === 'normal' && currentPhase % 2 === 0;
+        return currentStageType === 'normal';
     }
 
     function getAliveEnemiesCount() {
@@ -994,6 +1070,7 @@ var game = (function () {
             }
         }
         activeEnemies.splice(0, activeEnemies.length);
+        bossBombs.splice(0, bossBombs.length);
         evilShotsBuffer.splice(0, evilShotsBuffer.length);
         playerShotsBuffer.splice(0, playerShotsBuffer.length);
         pendingStageSpawns = 0;
@@ -1083,20 +1160,33 @@ var game = (function () {
         var life = stageConfig.enemyLife + enemyType.lifeBonus;
         var shots = stageConfig.enemyShots + enemyType.shotsBonus;
         var speed = stageConfig.enemySpeed + enemyType.speedBonus;
-        var enemy = new Evil(life, shots, speed, enemyType.spriteIndex, selectedType);
+        var runtime = ensureEnemyEntityRuntime();
+        var enemy = runtime && typeof runtime.createEvil === 'function'
+            ? runtime.createEvil(life, shots, speed, enemyType.spriteIndex, selectedType, evilImages)
+            : new Evil(life, shots, speed, enemyType.spriteIndex, selectedType);
         enemy.pointsToKill = stageConfig.enemyPoints + enemyType.pointsBonus;
         return enemy;
     }
 
     function createBossByLevel(stageConfig) {
-        var bossConfig = bossByLevel[currentLevel] || bossByLevel[1];
-        var boss = new FinalBoss(
-            stageConfig.bossLife + bossConfig.lifeBonus,
-            stageConfig.bossShots + bossConfig.shotsBonus,
-            stageConfig.bossSpeed + bossConfig.speedBonus,
-            bossConfig.spriteIndex,
-            currentLevel
-        );
+        var bossConfig = bossByLevel.final || bossByLevel[1] || { spriteIndex: 0, lifeBonus: 0, shotsBonus: 0, speedBonus: 0, pointsBonus: 0 };
+        var runtime = ensureEnemyEntityRuntime();
+        var boss = runtime && typeof runtime.createFinalBoss === 'function'
+            ? runtime.createFinalBoss(
+                stageConfig.bossLife + bossConfig.lifeBonus,
+                stageConfig.bossShots + bossConfig.shotsBonus,
+                stageConfig.bossSpeed + bossConfig.speedBonus,
+                bossConfig.spriteIndex,
+                1,
+                bossImages
+            )
+            : new FinalBoss(
+                stageConfig.bossLife + bossConfig.lifeBonus,
+                stageConfig.bossShots + bossConfig.shotsBonus,
+                stageConfig.bossSpeed + bossConfig.speedBonus,
+                bossConfig.spriteIndex,
+                1
+            );
         boss.pointsToKill = stageConfig.bossPoints + bossConfig.pointsBonus;
         return boss;
     }
@@ -1124,30 +1214,23 @@ var game = (function () {
 
     function completeStageClear() {
         if (currentStageType === 'boss') {
-            if (currentLevel === totalLevels) {
-                // Solicitar nombre antes de guardar
-                playerNameInputBuffer = getStoredPlayerName();
-                playerNameInputConfirmed = false;
-                playerNamePendingSave = true;
-                stageState = 'name_input_pending';
-                clearStageEntities();
-                return;
-            }
-            currentLevel++;
-            currentPhase = 1;
-            currentStageType = 'normal';
-            startSummary('Nivel completado. Preparando Nivel ' + currentLevel);
+            playerNameInputBuffer = getStoredPlayerName();
+            playerNameInputConfirmed = false;
+            playerNamePendingSave = true;
+            stageState = 'name_input_pending';
+            clearStageEntities();
             return;
         }
 
-        if (currentPhase === phasesPerLevel) {
+        if (currentLevel === totalLevels) {
             currentStageType = 'boss';
-            startSummary('Fase ' + phasesPerLevel + ' completada. Se acerca el jefe');
+            startSummary('Nivel ' + totalLevels + ' completado. Se acerca el jefe final');
             return;
         }
 
-        currentPhase++;
-        startSummary('Fase completada. Preparando Fase ' + currentPhase);
+        currentLevel++;
+        currentProgressLevel = currentLevel;
+        startSummary('Nivel completado. Preparando Nivel ' + currentLevel);
     }
 
     function drawTransitionOverlay() {
@@ -2009,17 +2092,353 @@ var game = (function () {
         return false;
     }
 
-    function checkCollisions(shot) {
+    function rectsOverlap(rectA, rectB) {
+        return rectA.left < rectB.right &&
+            rectA.right > rectB.left &&
+            rectA.top < rectB.bottom &&
+            rectA.bottom > rectB.top;
+    }
+
+    function getBossWeaponHitboxes(enemy) {
+        var collisionSystem = window.FlubberCollisionSystem || null;
+        if (collisionSystem && typeof collisionSystem.getBossWeaponBounds === 'function') {
+            return collisionSystem.getBossWeaponBounds(enemy);
+        }
+
+        if (!enemy || !enemy.bossCombat || !enemy.bossCombat.weapons) {
+            return [];
+        }
+
+        var bounds = [];
+        for (var i = 0; i < enemy.bossCombat.weapons.length; i++) {
+            var weapon = enemy.bossCombat.weapons[i];
+            if (!weapon || weapon.destroyed) {
+                continue;
+            }
+            bounds.push({
+                id: weapon.id || ('weapon-' + i),
+                index: i,
+                left: enemy.posX + weapon.offsetX,
+                top: enemy.posY + weapon.offsetY,
+                right: enemy.posX + weapon.offsetX + weapon.width,
+                bottom: enemy.posY + weapon.offsetY + weapon.height,
+                width: weapon.width,
+                height: weapon.height
+            });
+        }
+        return bounds;
+    }
+
+    function getBossBattleConfig() {
+        var cfgRoot = window.FlubberGameConfig || {};
+        return cfgRoot.bossLevelOne || {};
+    }
+
+    function countActiveBossBombs() {
+        var alive = 0;
+        for (var i = 0; i < bossBombs.length; i++) {
+            if (!bossBombs[i].dead) {
+                alive++;
+            }
+        }
+        return alive;
+    }
+
+    function spawnBossBomb(enemy) {
+        if (!enemy || enemy.dead) {
+            return;
+        }
+
+        var bossConfig = getBossBattleConfig();
+        var maxBombs = Math.max(1, bossConfig.bombMaxActive || 4);
+        if (countActiveBossBombs() >= maxBombs) {
+            return;
+        }
+
+        var minY = Math.max(24, bossConfig.bombMinY || 36);
+        var maxY = Math.max(minY + 10, Math.floor(canvas.height / 2) - 40);
+        var bomb = {
+            posX: 30 + getRandomNumber(Math.max(1, canvas.width - 60)),
+            posY: minY + getRandomNumber(Math.max(1, maxY - minY)),
+            radius: 16,
+            dead: false
+        };
+
+        bossBombs.push(bomb);
+    }
+
+    function spawnBossBombFanTowardsPlayer(bomb, ownerEnemy) {
+        if (!bomb || bomb.dead) {
+            return;
+        }
+
+        var bossConfig = getBossBattleConfig();
+        var spread = bossConfig.bombFanSpreadRadians || 0.64;
+        var totalShots = Math.max(3, bossConfig.bombBurstShotCount || 3);
+        var step = totalShots > 1 ? (spread / (totalShots - 1)) : 0;
+        var start = -(spread / 2);
+        var centerX = bomb.posX - 5;
+        var centerY = bomb.posY + bomb.radius;
+        var targetX = player ? (player.posX + (player.width / 2)) : bomb.posX;
+        var targetY = player ? (player.posY + (player.height / 2)) : (bomb.posY + 120);
+        var baseAngle = Math.atan2(targetY - bomb.posY, targetX - bomb.posX);
+        var speed = Math.max(2.2, bossConfig.bombProjectileSpeed || 3.4);
+
+        for (var i = 0; i < totalShots; i++) {
+            var offset = start + (step * i);
+            var shotAngle = baseAngle + offset;
+            var evilShot = new EvilShot(centerX, centerY);
+            evilShot.vx = Math.cos(shotAngle) * speed;
+            evilShot.vy = Math.max(1.4, Math.sin(shotAngle) * speed);
+            evilShot.add();
+        }
+
+        bomb.dead = true;
+
+        if (ownerEnemy && ownerEnemy.bossCombat && ownerEnemy.bossCombat.firstWeaponDestroyedTriggered) {
+            var bonusScore = Math.max(1, bossConfig.bombScoreBase || 9);
+            player.score += Math.round(bonusScore * playerScoreMultiplier);
+        }
+    }
+
+    function countAliveBossReinforcements(ownerEnemy) {
+        var alive = 0;
         for (var i = 0; i < activeEnemies.length; i++) {
             var enemy = activeEnemies[i];
-            var shotWidth = Math.max(10, Math.round(10 * (shot.scale || 1)));
-            var shotHeight = Math.max(18, Math.round(20 * (shot.scale || 1)));
-            var shotLeft = shot.posX - (shotWidth / 2);
-            var shotRight = shotLeft + shotWidth;
-            var shotTop = shot.posY;
-            var shotBottom = shotTop + shotHeight;
-            if (!enemy.dead && shotLeft <= (enemy.posX + enemy.image.width) && shotRight >= enemy.posX &&
-                shotTop <= (enemy.posY + enemy.image.height) && shotBottom >= enemy.posY) {
+            if (!enemy || enemy.dead || enemy === ownerEnemy) {
+                continue;
+            }
+            if (enemy.spawnedByBossOne) {
+                alive++;
+            }
+        }
+        return alive;
+    }
+
+    function spawnBossReinforcementEnemyTypeOne(ownerEnemy) {
+        if (!ownerEnemy || ownerEnemy.dead) {
+            return;
+        }
+
+        var bossConfig = getBossBattleConfig();
+        var maxAlive = Math.max(1, bossConfig.reinforcementMaxActive || 3);
+        if (countAliveBossReinforcements(ownerEnemy) >= maxAlive) {
+            return;
+        }
+
+        var typeConfig = enemyTypeConfigs[1] || { spriteIndex: 0, lifeBonus: 0, shotsBonus: 0, speedBonus: 0.14, pointsBonus: 0 };
+        var stageConfig = activeStageConfig || getCurrentStageConfig();
+        var life = stageConfig.enemyLife + typeConfig.lifeBonus + (bossConfig.reinforcementLifeBonus || 0);
+        var shots = stageConfig.enemyShots + typeConfig.shotsBonus + (bossConfig.reinforcementShotsBonus || 0);
+        var speed = stageConfig.enemySpeed + typeConfig.speedBonus + (bossConfig.reinforcementSpeedBonus || 0.1);
+
+        var runtime = ensureEnemyEntityRuntime();
+        var reinforcement = runtime && typeof runtime.createEvil === 'function'
+            ? runtime.createEvil(life, shots, speed, typeConfig.spriteIndex, 1, evilImages)
+            : new Evil(life, shots, speed, typeConfig.spriteIndex, 1);
+
+        reinforcement.pointsToKill = stageConfig.enemyPoints + (typeConfig.pointsBonus || 0);
+        reinforcement.spawnedByBossOne = true;
+        activeEnemies.push(reinforcement);
+    }
+
+    function updateBossSpecialEvents(enemy) {
+        if (!enemy || enemy.dead || !enemy.isBossLevelOne || !enemy.bossCombat) {
+            return;
+        }
+
+        var combat = enemy.bossCombat;
+        var nowTime = new Date().getTime();
+        var bossConfig = getBossBattleConfig();
+
+        if (combat.firstWeaponDestroyedTriggered) {
+            if (!combat.nextBombSpawnAt) {
+                combat.nextBombSpawnAt = nowTime + Math.max(900, bossConfig.bombSpawnIntervalMs || 2200);
+            }
+            if (nowTime >= combat.nextBombSpawnAt) {
+                spawnBossBomb(enemy);
+                combat.nextBombSpawnAt = nowTime + Math.max(900, bossConfig.bombSpawnIntervalMs || 2200);
+            }
+        }
+
+        if (combat.secondWeaponDestroyedTriggered) {
+            if (!combat.nextReinforcementAt) {
+                combat.nextReinforcementAt = nowTime + Math.max(1200, bossConfig.reinforcementIntervalMs || 3200);
+            }
+            if (nowTime >= combat.nextReinforcementAt) {
+                spawnBossReinforcementEnemyTypeOne(enemy);
+                combat.nextReinforcementAt = nowTime + Math.max(1200, bossConfig.reinforcementIntervalMs || 3200);
+            }
+        }
+    }
+
+    function removeDeadBossBombs() {
+        for (var i = bossBombs.length - 1; i >= 0; i--) {
+            if (bossBombs[i].dead) {
+                arrayRemove(bossBombs, i);
+            }
+        }
+    }
+
+    function drawBossBombs() {
+        for (var i = 0; i < bossBombs.length; i++) {
+            var bomb = bossBombs[i];
+            if (!bomb || bomb.dead) {
+                continue;
+            }
+
+            bufferctx.save();
+            bufferctx.fillStyle = 'rgba(255, 105, 40, 0.9)';
+            bufferctx.strokeStyle = 'rgba(255, 230, 120, 0.95)';
+            bufferctx.lineWidth = 2;
+            bufferctx.beginPath();
+            bufferctx.arc(Math.round(bomb.posX), Math.round(bomb.posY), bomb.radius, 0, Math.PI * 2, false);
+            bufferctx.fill();
+            bufferctx.stroke();
+            bufferctx.restore();
+        }
+    }
+
+    function tryHitBossBomb(shotRect) {
+        for (var i = 0; i < bossBombs.length; i++) {
+            var bomb = bossBombs[i];
+            if (!bomb || bomb.dead) {
+                continue;
+            }
+
+            var bombRect = {
+                left: bomb.posX - bomb.radius,
+                top: bomb.posY - bomb.radius,
+                right: bomb.posX + bomb.radius,
+                bottom: bomb.posY + bomb.radius
+            };
+
+            if (rectsOverlap(shotRect, bombRect)) {
+                var ownerBoss = null;
+                for (var e = 0; e < activeEnemies.length; e++) {
+                    var enemy = activeEnemies[e];
+                    if (enemy && !enemy.dead && enemy.isBossLevelOne && enemy.bossCombat) {
+                        ownerBoss = enemy;
+                        break;
+                    }
+                }
+                spawnBossBombFanTowardsPlayer(bomb, ownerBoss);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    function countDestroyedBossWeapons(enemy) {
+        if (!enemy || !enemy.bossCombat || !enemy.bossCombat.weapons) {
+            return 0;
+        }
+
+        var destroyed = 0;
+        for (var i = 0; i < enemy.bossCombat.weapons.length; i++) {
+            if (enemy.bossCombat.weapons[i] && enemy.bossCombat.weapons[i].destroyed) {
+                destroyed++;
+            }
+        }
+        return destroyed;
+    }
+
+    function applyBossWeaponDamage(enemy, weaponIndex, damage) {
+        if (!enemy || !enemy.bossCombat || !enemy.bossCombat.weapons) {
+            return false;
+        }
+
+        var weapon = enemy.bossCombat.weapons[weaponIndex];
+        if (!weapon || weapon.destroyed) {
+            return false;
+        }
+
+        weapon.life -= damage;
+        if (weapon.life > 0) {
+            return false;
+        }
+
+        weapon.life = 0;
+        weapon.destroyed = true;
+
+        var combat = enemy.bossCombat;
+        var destroyedCount = countDestroyedBossWeapons(enemy);
+        if (destroyedCount >= 1 && !combat.firstWeaponDestroyedTriggered) {
+            combat.firstWeaponDestroyedTriggered = true;
+            combat.nextBombSpawnAt = new Date().getTime() + Math.max(900, getBossBattleConfig().bombSpawnIntervalMs || 2200);
+        }
+        if (destroyedCount >= 2 && !combat.secondWeaponDestroyedTriggered) {
+            combat.secondWeaponDestroyedTriggered = true;
+            combat.nextReinforcementAt = new Date().getTime() + Math.max(1200, getBossBattleConfig().reinforcementIntervalMs || 3200);
+        }
+
+        if (destroyedCount >= combat.weapons.length) {
+            enemy.life = 0;
+            enemy.kill();
+            for (var i = 0; i < bossBombs.length; i++) {
+                if (bossBombs[i]) {
+                    bossBombs[i].dead = true;
+                }
+            }
+            player.score += Math.round(enemy.pointsToKill * playerScoreMultiplier);
+            return true;
+        }
+
+        return true;
+    }
+
+    function checkCollisions(shot) {
+        var shotWidth = Math.max(10, Math.round(10 * (shot.scale || 1)));
+        var shotHeight = Math.max(18, Math.round(20 * (shot.scale || 1)));
+        var shotRect = {
+            left: shot.posX - (shotWidth / 2),
+            top: shot.posY,
+            right: shot.posX - (shotWidth / 2) + shotWidth,
+            bottom: shot.posY + shotHeight
+        };
+
+        if (tryHitBossBomb(shotRect)) {
+            shot.deleteShot(parseInt(shot.identifier, 10));
+            return false;
+        }
+
+        for (var i = 0; i < activeEnemies.length; i++) {
+            var enemy = activeEnemies[i];
+            if (!enemy || enemy.dead) {
+                continue;
+            }
+
+            if (enemy.isBossLevelOne && enemy.bossCombat) {
+                var weaponHitboxes = getBossWeaponHitboxes(enemy);
+                for (var w = 0; w < weaponHitboxes.length; w++) {
+                    var weaponBox = weaponHitboxes[w];
+                    if (!rectsOverlap(shotRect, weaponBox)) {
+                        continue;
+                    }
+
+                    var weaponDamage = shot.damage || playerShotDamage || 1;
+                    applyBossWeaponDamage(enemy, weaponBox.index, weaponDamage);
+
+                    if ((shot.remainingBounces || 0) > 0) {
+                        shot.remainingBounces = 0;
+                        shot.isHoming = false;
+                        shot.vy = -Math.max(2, shot.speed * 0.75);
+                        shot.vx = getBounceHorizontalSpeed(shot, enemy);
+                        shot.posX = weaponBox.left + (weaponBox.width / 2);
+                        shot.posY = weaponBox.top - shotHeight - 2;
+                        return 'keep';
+                    }
+
+                    shot.deleteShot(parseInt(shot.identifier, 10));
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (shotRect.left <= (enemy.posX + enemy.image.width) && shotRect.right >= enemy.posX &&
+                shotRect.top <= (enemy.posY + enemy.image.height) && shotRect.bottom >= enemy.posY) {
                 var damage = shot.damage || playerShotDamage || 1;
                 enemy.life -= damage;
                 if (runUpgrades.slowStacks > 0) {
@@ -2040,7 +2459,7 @@ var game = (function () {
                     return 'keep';
                 }
 
-                shot.deleteShot(parseInt(shot.identifier));
+                shot.deleteShot(parseInt(shot.identifier, 10));
                 return false;
             }
         }
@@ -2367,7 +2786,10 @@ var game = (function () {
             }
         }
 
+        drawBossBombs();
+
         updateEnemies();
+        removeDeadBossBombs();
 
         for (var j = 0; j < playerShotsBuffer.length; j++) {
             var disparoBueno = playerShotsBuffer[j];
@@ -2468,6 +2890,7 @@ var game = (function () {
             var enemy = activeEnemies[i];
             if (!enemy.dead) {
                 enemy.update();
+                updateBossSpecialEvents(enemy);
                 if (enemy.isOutOfScreen()) {
                     enemy.kill();
                 }
