@@ -168,6 +168,11 @@ var game = (function () {
     var fogueoPulseInterval = 7000;
     var scoreHistoryStorageKey = 'flubber_score_history_v2';
     var scoreHistoryStorageLimit = 200;
+    var playerNameInputBuffer = '';
+    var playerNameInputCursorBlink = 0;
+    var playerNameInputConfirmed = false;
+    var playerNamePendingSave = false;
+    var playerNamePendingSave = false;
     var playerNameStorageKey = 'flubber_player_name';
     var legacyScoreDatePattern = /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}$/;
     var debugRewardsForTest = [];
@@ -963,6 +968,10 @@ var game = (function () {
 
     function shouldOpenRewardSelector() {
         if (currentStageType === 'boss') {
+            // No abrir selector de recompensas para el último boss
+            if (currentLevel === totalLevels) {
+                return false;
+            }
             return true;
         }
         return currentStageType === 'normal' && currentPhase % 2 === 0;
@@ -1117,8 +1126,11 @@ var game = (function () {
     function completeStageClear() {
         if (currentStageType === 'boss') {
             if (currentLevel === totalLevels) {
-                saveFinalScore();
-                congratulations = true;
+                // Solicitar nombre antes de guardar
+                playerNameInputBuffer = getStoredPlayerName();
+                playerNameInputConfirmed = false;
+                playerNamePendingSave = true;
+                stageState = 'name_input_pending';
                 clearStageEntities();
                 return;
             }
@@ -1334,7 +1346,11 @@ var game = (function () {
                 }, 500);
 
             } else {
-                saveFinalScore();
+                // Solicitar nombre antes de guardar
+                playerNameInputBuffer = getStoredPlayerName();
+                playerNameInputConfirmed = false;
+                playerNamePendingSave = true;
+                stageState = 'name_input_pending';
                 clearStageEntities();
                 youLoose = true;
             }
@@ -2049,6 +2065,38 @@ var game = (function () {
     function keyDown(e) {
         var key = (window.event ? e.keyCode : e.which);
 
+        if (stageState === 'name_input_pending') {
+            if (key === 13) { // ENTER
+                playerNameInputConfirmed = true;
+                e.preventDefault();
+                return;
+            }
+            if (key === 27) { // ESC - cancelar
+                playerNameInputConfirmed = true;
+                playerNameInputBuffer = getStoredPlayerName();
+                e.preventDefault();
+                return;
+            }
+            if (key === 8) { // Backspace
+                if (playerNameInputBuffer.length > 0) {
+                    playerNameInputBuffer = playerNameInputBuffer.substring(0, playerNameInputBuffer.length - 1);
+                }
+                e.preventDefault();
+                return;
+            }
+            // Caracteres alfanuméricos y espacio (32 es espacio)
+            var char = String.fromCharCode(key).toUpperCase();
+            if ((key >= 48 && key <= 57) || (key >= 65 && key <= 90) || key === 32) {
+                if (playerNameInputBuffer.length < 12) {
+                    playerNameInputBuffer += char;
+                }
+                e.preventDefault();
+                return;
+            }
+            e.preventDefault();
+            return;
+        }
+
         if (stageState === 'reward_pending') {
             if (key === keyMap.left) {
                 rewardSelectedIndex = 0;
@@ -2089,6 +2137,86 @@ var game = (function () {
         ctx.drawImage(buffer, 0, 0);
     }
 
+    function drawNameInput() {
+        var centerX = canvas.width / 2;
+        var centerY = canvas.height / 2;
+        var panelHeight = 200;
+        
+        drawArcadePanel(60, centerY - 100, canvas.width - 120, panelHeight, 0.92, 'rgba(100, 150, 255, 0.9)');
+        
+        drawArcadeText('INGRESA TU NOMBRE', centerX, centerY - 60, {
+            color: '#fff3a3',
+            font: "bold 20px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(150, 200, 255, 0.95)',
+            glowBlur: 10,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 3
+        });
+        
+        // Cursor parpadeante
+        playerNameInputCursorBlink = (playerNameInputCursorBlink + 1) % 60;
+        var showCursor = playerNameInputCursorBlink < 30;
+        
+        var displayText = playerNameInputBuffer;
+        if (showCursor) {
+            displayText += '_';
+        } else if (playerNameInputBuffer.length < 12) {
+            displayText += ' ';
+        }
+        
+        drawArcadeText(displayText, centerX, centerY - 5, {
+            color: '#ffff00',
+            font: "bold 18px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 255, 100, 0.8)',
+            glowBlur: 8,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
+        
+        drawArcadeText('MAX 12 CARACTERES', centerX, centerY + 40, {
+            color: '#ffcf63',
+            font: "bold 11px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 180, 0, 0.7)',
+            glowBlur: 5,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
+        
+        drawArcadeText('ENTER = Confirmar  |  ESC = Cancelar', centerX, centerY + 70, {
+            color: '#ffcf63',
+            font: "bold 11px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 180, 0, 0.7)',
+            glowBlur: 5,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
+        
+        // Procesar si está confirmado
+        if (playerNameInputConfirmed) {
+            playerNameInputConfirmed = false;
+            var normalized = normalizePlayerName(playerNameInputBuffer);
+            if (isStorageAvailable()) {
+                localStorage.setItem(playerNameStorageKey, normalized);
+            }
+            if (playerNamePendingSave) {
+                playerNamePendingSave = false;
+                saveFinalScore();
+                if (youLoose) {
+                    // Derrota: cambiar estado para que se muestre GAME OVER
+                    stageState = 'game_over_display';
+                } else {
+                    // Victoria: mostrar pantalla de congratulaciones
+                    congratulations = true;
+                    stageState = 'finished';
+                }
+            }
+        }
+    }
+
     function showGameOver() {
         var centerX = canvas.width / 2;
         var centerY = canvas.height / 2;
@@ -2116,8 +2244,12 @@ var game = (function () {
     function showCongratulations () {
         var centerX = canvas.width / 2;
         var centerY = canvas.height / 2;
-        drawArcadePanel(70, centerY - 120, canvas.width - 140, 240, 0.92, 'rgba(255, 208, 77, 0.9)');
-        drawArcadeText('VICTORIA TOTAL', centerX, centerY - 70, {
+        var baseScore = player.score;
+        var lifeBonus = player.life * 10;
+        var totalScore = getTotalScore();
+        
+        drawArcadePanel(70, centerY - 130, canvas.width - 140, 260, 0.92, 'rgba(255, 208, 77, 0.9)');
+        drawArcadeText('VICTORIA TOTAL', centerX, centerY - 80, {
             color: arcadeTheme.successText,
             font: arcadeTheme.titleFont,
             align: 'center',
@@ -2126,25 +2258,25 @@ var game = (function () {
             outlineColor: arcadeTheme.outline,
             outlineWidth: 4
         });
-        drawArcadeText('PUNTOS ' + player.score, centerX, centerY - 20, {
+        drawArcadeText('PUNTOS ' + baseScore, centerX, centerY - 25, {
             color: '#ffe680',
-            font: "bold 18px 'Courier New', monospace",
+            font: "bold 16px 'Courier New', monospace",
             align: 'center',
             glowColor: arcadeTheme.glow,
             glowBlur: 7,
             outlineColor: arcadeTheme.outline,
             outlineWidth: 3
         });
-        drawArcadeText('VIDAS ' + player.life + ' x 5', centerX, centerY + 20, {
+        drawArcadeText('BONO VIDAS ' + player.life + ' x 10 = ' + lifeBonus, centerX, centerY + 10, {
             color: '#ffcf63',
-            font: "bold 18px 'Courier New', monospace",
+            font: "bold 16px 'Courier New', monospace",
             align: 'center',
             glowColor: 'rgba(255, 120, 0, 0.8)',
             glowBlur: 6,
             outlineColor: arcadeTheme.outline,
             outlineWidth: 3
         });
-        drawArcadeText('TOTAL ' + getTotalScore(), centerX, centerY + 62, {
+        drawArcadeText('TOTAL ' + totalScore, centerX, centerY + 55, {
             color: '#fff3a3',
             font: "bold 21px 'Courier New', monospace",
             align: 'center',
@@ -2156,13 +2288,18 @@ var game = (function () {
     }
 
     function getTotalScore() {
-        return player.score + player.life * 5;
+        return player.score + player.life * 10;
     }
 
     function update() {
 
         drawBackground();
         updateRewardEffects();
+
+        if (stageState === 'name_input_pending') {
+            drawNameInput();
+            return;
+        }
 
         if (stageState === 'reward_pending') {
             drawRewardSelector();
@@ -2172,6 +2309,11 @@ var game = (function () {
 
         if (congratulations) {
             showCongratulations();
+            return;
+        }
+
+        if (stageState === 'game_over_display') {
+            showGameOver();
             return;
         }
 
@@ -2618,17 +2760,7 @@ var game = (function () {
     }
 
     function getPlayerNameForRecord() {
-        var defaultName = getStoredPlayerName();
-        var providedName = window.prompt('Nombre del jugador', defaultName);
-
-        if (providedName === null) {
-            return defaultName;
-        }
-
-        var normalized = normalizePlayerName(providedName);
-        if (isStorageAvailable()) {
-            localStorage.setItem(playerNameStorageKey, normalized);
-        }
+        var normalized = normalizePlayerName(playerNameInputBuffer);
         return normalized;
     }
 
@@ -2636,7 +2768,7 @@ var game = (function () {
         return {
             id: new Date().getTime() + '_' + Math.floor(Math.random() * 1000000),
             playerName: getPlayerNameForRecord(),
-            score: Math.max(0, normalizeNumber(player && player.score, 0))
+            score: Math.max(0, normalizeNumber(getTotalScore(), 0))
         };
     }
 
