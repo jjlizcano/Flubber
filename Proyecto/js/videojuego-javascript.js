@@ -184,6 +184,9 @@ var game = (function () {
         phase: 1,
         stageType: 'normal'
     };
+    var isPaused = false;
+    var pausedStageState = '';
+    var pauseStartedAt = 0;
 
     function loop() {
         update();
@@ -236,7 +239,6 @@ var game = (function () {
         playerKilledImage.src = 'images/bueno_muerto.png';
 
     }
-
     function init() {
 
         preloadImages();
@@ -922,6 +924,147 @@ var game = (function () {
         runUpgrades.fogueoNextPulseAt = new Date().getTime() + fogueoPulseInterval;
     }
 
+    function clearKeyPressedState() {
+        for (var key in keyPressed) {
+            if (keyPressed.hasOwnProperty(key)) {
+                keyPressed[key] = false;
+            }
+        }
+    }
+
+    function shiftAbsoluteTimer(value, deltaMs) {
+        if (typeof value !== 'number' || value <= 0) {
+            return value;
+        }
+        return value + deltaMs;
+    }
+
+    function shiftPauseSensitiveTimers(deltaMs) {
+        if (!deltaMs) {
+            return;
+        }
+
+        stageTransitionUntil = shiftAbsoluteTimer(stageTransitionUntil, deltaMs);
+        runUpgrades.fogueoNextPulseAt = shiftAbsoluteTimer(runUpgrades.fogueoNextPulseAt, deltaMs);
+
+        if (player) {
+            player.invulnerableUntil = shiftAbsoluteTimer(player.invulnerableUntil, deltaMs);
+            player.recoilUntil = shiftAbsoluteTimer(player.recoilUntil, deltaMs);
+            player.shootFxUntil = shiftAbsoluteTimer(player.shootFxUntil, deltaMs);
+            player.animationStartedAt = shiftAbsoluteTimer(player.animationStartedAt, deltaMs);
+        }
+
+        for (var i = 0; i < activeEnemies.length; i++) {
+            var enemy = activeEnemies[i];
+            if (!enemy) {
+                continue;
+            }
+
+            enemy.slowUntil = shiftAbsoluteTimer(enemy.slowUntil, deltaMs);
+            enemy.hunterChargeUntil = shiftAbsoluteTimer(enemy.hunterChargeUntil, deltaMs);
+            enemy.hunterZigzagUntil = shiftAbsoluteTimer(enemy.hunterZigzagUntil, deltaMs);
+            enemy.strikePhaseUntil = shiftAbsoluteTimer(enemy.strikePhaseUntil, deltaMs);
+            enemy.sentinelHoldUntil = shiftAbsoluteTimer(enemy.sentinelHoldUntil, deltaMs);
+            enemy.sentinelDiagonalUntil = shiftAbsoluteTimer(enemy.sentinelDiagonalUntil, deltaMs);
+
+            if (enemy.bossCombat) {
+                enemy.bossCombat.nextBombSpawnAt = shiftAbsoluteTimer(enemy.bossCombat.nextBombSpawnAt, deltaMs);
+                enemy.bossCombat.nextReinforcementAt = shiftAbsoluteTimer(enemy.bossCombat.nextReinforcementAt, deltaMs);
+            }
+        }
+    }
+
+    function stopActiveEnemyShooting() {
+        for (var i = 0; i < activeEnemies.length; i++) {
+            if (activeEnemies[i] && activeEnemies[i].stopShooting) {
+                activeEnemies[i].stopShooting();
+            }
+        }
+        clearStageSpawnScheduler();
+    }
+
+    function restartActiveEnemyShooting() {
+        for (var i = 0; i < activeEnemies.length; i++) {
+            if (activeEnemies[i] && activeEnemies[i].startShooting) {
+                activeEnemies[i].startShooting();
+            }
+        }
+
+        if (stageState === 'playing' && pendingStageSpawns > 0 && activeStageConfig) {
+            spawnNextEnemyWave(activeStageConfig);
+        }
+    }
+
+    function canPauseGame() {
+        return !isPaused && (stageState === 'playing' || stageState === 'countdown' || stageState === 'summary');
+    }
+
+    function pauseGame() {
+        if (!canPauseGame()) {
+            return;
+        }
+
+        pausedStageState = stageState;
+        pauseStartedAt = new Date().getTime();
+        isPaused = true;
+        stageState = 'paused';
+        clearKeyPressedState();
+        stopActiveEnemyShooting();
+    }
+
+    function resumeGame() {
+        if (!isPaused) {
+            return;
+        }
+
+        var nowTime = new Date().getTime();
+        shiftPauseSensitiveTimers(nowTime - pauseStartedAt);
+        isPaused = false;
+        stageState = pausedStageState || 'playing';
+        pausedStageState = '';
+        pauseStartedAt = 0;
+        clearKeyPressedState();
+
+        if (stageState === 'playing') {
+            restartActiveEnemyShooting();
+        }
+    }
+
+    function restartGameFromPause() {
+        if (!isPaused) {
+            return;
+        }
+
+        isPaused = false;
+        pausedStageState = '';
+        pauseStartedAt = 0;
+        clearKeyPressedState();
+
+        clearStageEntities();
+        clearEnemyProjectiles();
+        resetRunUpgrades();
+        refreshPlayerStats();
+
+        currentLevel = 1;
+        currentProgressLevel = 1;
+        currentStageType = 'normal';
+        stageMessage = '';
+        stageTransitionUntil = 0;
+        activeStageConfig = null;
+        youLoose = false;
+        congratulations = false;
+        playerNamePendingSave = false;
+        playerNameInputConfirmed = false;
+        playerNameInputBuffer = '';
+        playerNameInputCursorBlink = 0;
+        now = 0;
+        nextPlayerShot = 0;
+
+        applyDebugStartConfig();
+        player = new Player(playerLife, 0);
+        startCountdown('Nivel ' + currentLevel);
+    }
+
     function drawArcadePanel(x, y, width, height, alpha, borderColor) {
         bufferctx.save();
         bufferctx.fillStyle = arcadeTheme.panelBg;
@@ -1169,7 +1312,7 @@ var game = (function () {
     }
 
     function createBossByLevel(stageConfig) {
-        var bossConfig = bossByLevel.final || bossByLevel[1] || { spriteIndex: 0, lifeBonus: 0, shotsBonus: 0, speedBonus: 0, pointsBonus: 0 };
+        var bossConfig = bossByLevel.final || { spriteIndex: 0, lifeBonus: 0, shotsBonus: 0, speedBonus: 0, pointsBonus: 0 };
         var runtime = ensureEnemyEntityRuntime();
         var boss = runtime && typeof runtime.createFinalBoss === 'function'
             ? runtime.createFinalBoss(
@@ -1286,6 +1429,54 @@ var game = (function () {
                 outlineWidth: 4
             });
         }
+    }
+
+    function drawPauseOverlay() {
+        var centerX = canvas.width / 2;
+        var centerY = canvas.height / 2;
+        var panelWidth = canvas.width - 100;
+        var panelHeight = 220;
+
+        drawArcadePanel(50, centerY - 120, panelWidth, panelHeight, 0.94, 'rgba(255, 180, 0, 0.95)');
+        drawArcadeText('PAUSA', centerX, centerY - 70, {
+            color: '#fff3a3',
+            font: arcadeTheme.titleFont,
+            align: 'center',
+            glowColor: 'rgba(255, 180, 0, 0.95)',
+            glowBlur: 10,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 4
+        });
+
+        drawArcadeText('P = Reanudar', centerX, centerY - 15, {
+            color: arcadeTheme.primaryText,
+            font: "bold 16px 'Courier New', monospace",
+            align: 'center',
+            glowColor: arcadeTheme.glow,
+            glowBlur: 6,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
+
+        drawArcadeText('R = Reiniciar partida', centerX, centerY + 20, {
+            color: '#ffcf63',
+            font: "bold 16px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 120, 0, 0.85)',
+            glowBlur: 6,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
+
+        drawArcadeText('NIVEL ' + currentLevel + '  |  PUNTOS ' + player.score, centerX, centerY + 55, {
+            color: '#ffe680',
+            font: "bold 13px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 120, 0, 0.75)',
+            glowBlur: 5,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
     }
 
     function Player(life, score) {
@@ -1911,6 +2102,16 @@ var game = (function () {
 
         var self = this;
 
+        function scheduleNextShot(enemy, delay) {
+            if (enemy.dead || stageState !== 'playing') {
+                return;
+            }
+
+            enemy.shotTimeoutId = setTimeout(function() {
+                shoot(enemy);
+            }, delay);
+        }
+
         function shoot(enemy) {
             if (enemy.enemyType === 3 || enemy.enemyType === 5) {
                 return;
@@ -1939,11 +2140,14 @@ var game = (function () {
                     var disparo = new EvilShot(centerX, baseY);
                     disparo.add();
                 }
-                enemy.shotTimeoutId = setTimeout(function() {
-                    shoot(enemy);
-                }, getRandomNumber(3000));
+                scheduleNextShot(enemy, getRandomNumber(3000));
             }
         }
+
+        this.startShooting = function() {
+            self.stopShooting();
+            scheduleNextShot(self, 1000 + getRandomNumber(2500));
+        };
 
         this.stopShooting = function() {
             if (self.shotTimeoutId) {
@@ -1952,9 +2156,7 @@ var game = (function () {
             }
         };
 
-        self.shotTimeoutId = setTimeout(function() {
-            shoot(self);
-        }, 1000 + getRandomNumber(2500));
+        self.startShooting();
 
         this.toString = function () {
             return 'Enemigo con vidas:' + this.life + 'shotss: ' + this.shots + ' puntos por matar: ' + this.pointsToKill;
@@ -2483,6 +2685,24 @@ var game = (function () {
     function keyDown(e) {
         var key = (window.event ? e.keyCode : e.which);
 
+        if (key === 80) { // P
+            if (isPaused) {
+                resumeGame();
+            } else {
+                pauseGame();
+            }
+            e.preventDefault();
+            return;
+        }
+
+        if (isPaused) {
+            if (key === 82) { // R
+                restartGameFromPause();
+            }
+            e.preventDefault();
+            return;
+        }
+
         if (stageState === 'name_input_pending') {
             if (key === 13) { // ENTER
                 playerNameInputConfirmed = true;
@@ -2730,6 +2950,13 @@ var game = (function () {
     function update() {
 
         drawBackground();
+
+        if (isPaused) {
+            drawPauseOverlay();
+            showLifeAndScore();
+            return;
+        }
+
         updateRewardEffects();
 
         if (stageState === 'name_input_pending') {
@@ -3306,6 +3533,9 @@ var game = (function () {
         setDebugStartConfig: setDebugStartConfig,
         clearDebugStartConfig: clearDebugStartConfig,
         setDebugRewardsForTest: setDebugRewardsForTest,
-        clearDebugRewardsForTest: clearDebugRewardsForTest
+        clearDebugRewardsForTest: clearDebugRewardsForTest,
+        pauseGame: pauseGame,
+        resumeGame: resumeGame,
+        restartGameFromPause: restartGameFromPause
     }
 })();

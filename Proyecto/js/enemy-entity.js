@@ -433,6 +433,12 @@ window.FlubberEnemyEntity = (function () {
                 shot.add();
             }
 
+            function scheduleShoot(delay) {
+                enemy.shotTimeoutId = setTimeout(function () {
+                    shoot();
+                }, delay);
+            }
+
             function shootBossLevelOnePattern() {
                 if (!enemy.isBossLevelOne || !enemy.bossCombat) {
                     return;
@@ -482,9 +488,7 @@ window.FlubberEnemyEntity = (function () {
                 combat.activeWeaponIndex = (selectedWeaponIndex + 1) % weapons.length;
 
                 if (!enemy.dead && options.getStageState() === 'playing') {
-                    enemy.shotTimeoutId = setTimeout(function () {
-                        shoot();
-                    }, getRandomInRange(bossConfig.shootDelayMin || 800, bossConfig.shootDelayMax || 1300));
+                    scheduleShoot(getRandomInRange(bossConfig.shootDelayMin || 800, bossConfig.shootDelayMax || 1300));
                 }
             }
 
@@ -520,9 +524,7 @@ window.FlubberEnemyEntity = (function () {
                         var shot = options.createEvilShot(centerX, baseY);
                         shot.add();
                     }
-                    enemy.shotTimeoutId = setTimeout(function () {
-                        shoot();
-                    }, options.getRandomNumber(3000));
+                    scheduleShoot(options.getRandomNumber(3000));
                 }
             }
 
@@ -651,6 +653,11 @@ window.FlubberEnemyEntity = (function () {
                 }
             };
 
+            enemy.startShooting = function () {
+                enemy.stopShooting();
+                scheduleShoot(1000 + options.getRandomNumber(2500));
+            };
+
             enemy.triggerShoot = function () {
                 shoot();
             };
@@ -659,9 +666,7 @@ window.FlubberEnemyEntity = (function () {
                 return 'Enemy life:' + enemy.life + ' shots:' + enemy.shots + ' points:' + enemy.pointsToKill;
             };
 
-            enemy.shotTimeoutId = setTimeout(function () {
-                shoot();
-            }, 1000 + options.getRandomNumber(2500));
+            enemy.startShooting();
 
             return enemy;
         }
@@ -798,13 +803,17 @@ window.FlubberEnemyEntity = (function () {
                 };
 
                 boss.stopShooting();
-                var initialShootDelay = Math.max(250, bossLevelOneConfig.initialShootDelay || 1100);
-                boss.shotTimeoutId = setTimeout(function () {
-                    boss.shotTimeoutId = null;
-                    if (!boss.dead && options.getStageState() === 'playing' && typeof boss.triggerShoot === 'function') {
-                        boss.triggerShoot();
-                    }
-                }, initialShootDelay);
+                boss.startShooting = function () {
+                    boss.stopShooting();
+                    var initialShootDelay = Math.max(250, bossLevelOneConfig.initialShootDelay || 1100);
+                    boss.shotTimeoutId = setTimeout(function () {
+                        boss.shotTimeoutId = null;
+                        if (!boss.dead && options.getStageState() === 'playing' && typeof boss.triggerShoot === 'function') {
+                            boss.triggerShoot();
+                        }
+                    }, initialShootDelay);
+                };
+                boss.startShooting();
             }
 
             return boss;

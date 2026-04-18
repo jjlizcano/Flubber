@@ -93,8 +93,6 @@ window.FlubberGameConfig = {
         5: { spriteIndex: 4, lifeBonus: 4, shotsBonus: 1, speedBonus: 0.00, pointsBonus: 7 }
     },
     bossByLevel: {
-        1: { spriteIndex: 0, lifeBonus: 24, shotsBonus: 2, speedBonus: 0.00, pointsBonus: 0 },
-        2: { spriteIndex: 4, lifeBonus: 4, shotsBonus: 4, speedBonus: 0.10, pointsBonus: 15 },
         final: { spriteIndex: 0, lifeBonus: 30, shotsBonus: 4, speedBonus: 0.06, pointsBonus: 24 }
     },
     bossLevelOne: {
