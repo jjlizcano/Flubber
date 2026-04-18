@@ -10,8 +10,25 @@ window.requestAnimFrame = (function () {
         };
 })();
 arrayRemove = function (array, from) {
-    var rest = array.slice((from) + 1 || array.length);
-    array.length = from < 0 ? array.length + from : from;
+    if (!array || !array.length) {
+        return 0;
+    }
+
+    var index = parseInt(from, 10);
+    if (isNaN(index)) {
+        return array.length;
+    }
+
+    if (index < 0) {
+        index = array.length + index;
+    }
+
+    if (index < 0 || index >= array.length) {
+        return array.length;
+    }
+
+    var rest = array.slice(index + 1);
+    array.length = index;
     return array.push.apply(array, rest);
 };
 
@@ -2258,8 +2275,9 @@ var game = (function () {
                     evilShot.deleteShot(parseInt(evilShot.identifier));
                 }
             } else {
+                // El disparo se elimina antes de aplicar daño porque el daño puede limpiar buffers.
+                evilShot.deleteShot(parseInt(evilShot.identifier, 10));
                 handlePlayerDamage(true);
-                evilShot.deleteShot(parseInt(evilShot.identifier));
             }
         }
     }
