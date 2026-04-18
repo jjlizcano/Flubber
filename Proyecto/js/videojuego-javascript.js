@@ -172,7 +172,6 @@ var game = (function () {
     var playerNameInputCursorBlink = 0;
     var playerNameInputConfirmed = false;
     var playerNamePendingSave = false;
-    var playerNamePendingSave = false;
     var playerNameStorageKey = 'flubber_player_name';
     var legacyScoreDatePattern = /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}$/;
     var debugRewardsForTest = [];
@@ -2220,7 +2219,9 @@ var game = (function () {
     function showGameOver() {
         var centerX = canvas.width / 2;
         var centerY = canvas.height / 2;
-        drawArcadePanel(100, centerY - 90, canvas.width - 200, 180, 0.9, 'rgba(255, 70, 80, 0.85)');
+        var finalScore = getFinalScore();
+
+        drawArcadePanel(100, centerY - 110, canvas.width - 200, 220, 0.9, 'rgba(255, 70, 80, 0.85)');
         drawArcadeText('GAME OVER', centerX, centerY - 12, {
             color: arcadeTheme.dangerText,
             font: arcadeTheme.titleFont,
@@ -2230,7 +2231,16 @@ var game = (function () {
             outlineColor: arcadeTheme.outline,
             outlineWidth: 4
         });
-        drawArcadeText('PULSA F5 PARA REINTENTAR', centerX, centerY + 34, {
+        drawArcadeText('PUNTUACION FINAL ' + finalScore, centerX, centerY + 30, {
+            color: '#ffe680',
+            font: "bold 16px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 120, 0, 0.85)',
+            glowBlur: 6,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 3
+        });
+        drawArcadeText('PULSA F5 PARA REINTENTAR', centerX, centerY + 66, {
             color: '#ffd9a0',
             font: "bold 13px 'Courier New', monospace",
             align: 'center',
@@ -2289,6 +2299,13 @@ var game = (function () {
 
     function getTotalScore() {
         return player.score + player.life * 10;
+    }
+
+    function getFinalScore() {
+        if (youLoose) {
+            return player.score;
+        }
+        return getTotalScore();
     }
 
     function update() {
@@ -2768,7 +2785,7 @@ var game = (function () {
         return {
             id: new Date().getTime() + '_' + Math.floor(Math.random() * 1000000),
             playerName: getPlayerNameForRecord(),
-            score: Math.max(0, normalizeNumber(getTotalScore(), 0))
+            score: Math.max(0, normalizeNumber(getFinalScore(), 0))
         };
     }
 
