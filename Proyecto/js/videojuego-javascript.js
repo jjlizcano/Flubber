@@ -2924,11 +2924,11 @@ var game = (function () {
     }
 
     function steerPlayerShot(playerShot) {
-        var target = getNearestEnemyToShot(playerShot);
+        var target = getNearestTargetForShot(playerShot);
         if (!target) {
             return;
         }
-        var targetCenter = target.posX + (target.image.width / 2);
+        var targetCenter = target.targetX;
         var shotCenter = playerShot.posX;
         var steerAmount = 2 + runUpgrades.homingStacks;
         if (targetCenter > shotCenter) {
@@ -2938,22 +2938,47 @@ var game = (function () {
         }
     }
 
-    function getNearestEnemyToShot(playerShot) {
-        var nearestEnemy = null;
+    function getNearestTargetForShot(playerShot) {
+        var nearestTarget = null;
         var nearestDistance = null;
         for (var i = 0; i < activeEnemies.length; i++) {
             var enemy = activeEnemies[i];
             if (enemy.dead) {
                 continue;
             }
-            var enemyCenter = enemy.posX + (enemy.image.width / 2);
-            var distance = Math.abs(enemyCenter - playerShot.posX) + Math.max(0, playerShot.posY - enemy.posY);
-            if (nearestDistance === null || distance < nearestDistance) {
-                nearestDistance = distance;
-                nearestEnemy = enemy;
+
+            if (enemy.isBossLevelOne && enemy.bossCombat) {
+                var weaponHitboxes = getBossWeaponHitboxes(enemy);
+                for (var w = 0; w < weaponHitboxes.length; w++) {
+                    var weaponBox = weaponHitboxes[w];
+                    var weaponCenterX = weaponBox.left + (weaponBox.width / 2);
+                    var weaponCenterY = weaponBox.top + (weaponBox.height / 2);
+                    var weaponDistance = Math.abs(weaponCenterX - playerShot.posX) + Math.max(0, playerShot.posY - weaponCenterY);
+                    if (nearestDistance === null || weaponDistance < nearestDistance) {
+                        nearestDistance = weaponDistance;
+                        nearestTarget = {
+                            enemy: enemy,
+                            targetX: weaponCenterX,
+                            targetY: weaponCenterY
+                        };
+                    }
+                }
+                continue;
+            }
+
+            var enemyCenterX = enemy.posX + (enemy.image.width / 2);
+            var enemyCenterY = enemy.posY + (enemy.image.height / 2);
+            var enemyDistance = Math.abs(enemyCenterX - playerShot.posX) + Math.max(0, playerShot.posY - enemyCenterY);
+            if (nearestDistance === null || enemyDistance < nearestDistance) {
+                nearestDistance = enemyDistance;
+                nearestTarget = {
+                    enemy: enemy,
+                    targetX: enemyCenterX,
+                    targetY: enemyCenterY
+                };
             }
         }
-        return nearestEnemy;
+        return nearestTarget;
     }
 
     function getBounceHorizontalSpeed(playerShot, impactedEnemy) {
