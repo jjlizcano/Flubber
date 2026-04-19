@@ -42,6 +42,15 @@ window.FlubberEnemyEntity = (function () {
                 fixedSpriteIndex: typeof spriteIndex === 'number' ? spriteIndex : null,
                 imageNumber: 1,
                 animation: 0,
+                customAnimationFrames: null,
+                customAnimationFrameIndex: 0,
+                deathAnimationFrames: null,
+                deathAnimationFrameIndex: 0,
+                deathAnimationCompleted: false,
+                deathFadeAlpha: 1,
+                deathFadeStep: 0.06,
+                deathFadeDelayCounter: 8,
+                shouldDisappear: false,
                 posY: -50,
                 life: life,
                 speed: options.getDefaultEnemySpeed(),
@@ -110,6 +119,11 @@ window.FlubberEnemyEntity = (function () {
             };
 
             enemy.image = enemyImages.animation[enemy.fixedSpriteIndex !== null ? enemy.fixedSpriteIndex : 0];
+            if (enemy.fixedSpriteIndex === 0 && enemyImages.type1Idle && enemyImages.type1Idle.length) {
+                enemy.customAnimationFrames = enemyImages.type1Idle;
+                enemy.customAnimationFrameIndex = 0;
+                enemy.image = enemy.customAnimationFrames[0];
+            }
             enemy.spriteWidth = getImageDimension(enemy.image, 40);
             enemy.spriteHeight = getImageDimension(enemy.image, 40);
             enemy.posX = getRandomNumber(Math.max(1, canvasWidth - enemy.spriteWidth));
@@ -529,10 +543,77 @@ window.FlubberEnemyEntity = (function () {
             }
 
             enemy.kill = function () {
+                if (enemy.dead) {
+                    return;
+                }
                 enemy.stopShooting();
                 enemy.dead = true;
+                if (enemy.fixedSpriteIndex === 0 && enemyImages.type1Death && enemyImages.type1Death.length) {
+                    enemy.customAnimationFrames = null;
+                    enemy.deathAnimationFrames = enemyImages.type1Death;
+                    enemy.deathAnimationFrameIndex = 0;
+                    enemy.deathAnimationCompleted = false;
+                    enemy.deathFadeAlpha = 1;
+                    enemy.deathFadeDelayCounter = 8;
+                    enemy.shouldDisappear = false;
+                    enemy.image = enemy.deathAnimationFrames[0];
+                    return;
+                }
                 enemy.image = enemyImages.killed;
             };
+
+            enemy.updateDeathEffect = function () {
+                if (!enemy.dead || enemy.shouldDisappear) {
+                    return;
+                }
+
+                if (enemy.deathAnimationFrames && enemy.deathAnimationFrames.length && !enemy.deathAnimationCompleted) {
+                    enemy.animation++;
+                    if (enemy.animation > 4) {
+                        enemy.animation = 0;
+                        if (enemy.deathAnimationFrameIndex < (enemy.deathAnimationFrames.length - 1)) {
+                            enemy.deathAnimationFrameIndex++;
+                            enemy.image = enemy.deathAnimationFrames[enemy.deathAnimationFrameIndex];
+                        } else {
+                            enemy.deathAnimationCompleted = true;
+                            enemy.image = enemy.deathAnimationFrames[enemy.deathAnimationFrames.length - 1];
+                        }
+                    }
+                    return;
+                }
+
+                if (enemy.deathAnimationCompleted) {
+                    if (enemy.deathFadeDelayCounter > 0) {
+                        enemy.deathFadeDelayCounter--;
+                        return;
+                    }
+
+                    enemy.deathFadeAlpha = Math.max(0, enemy.deathFadeAlpha - enemy.deathFadeStep);
+                    if (enemy.deathFadeAlpha === 0) {
+                        enemy.shouldDisappear = true;
+                    }
+                }
+            };
+
+            function updateEnemyFrame() {
+                var animationLength = enemyImages.animation && enemyImages.animation.length ? enemyImages.animation.length : 8;
+
+                if (enemy.customAnimationFrames && enemy.customAnimationFrames.length) {
+                    enemy.customAnimationFrameIndex = (enemy.customAnimationFrameIndex + 1) % enemy.customAnimationFrames.length;
+                    enemy.image = enemy.customAnimationFrames[enemy.customAnimationFrameIndex];
+                    return;
+                }
+
+                if (enemy.fixedSpriteIndex === null) {
+                    enemy.imageNumber++;
+                    if (enemy.imageNumber > animationLength) {
+                        enemy.imageNumber = 1;
+                    }
+                    enemy.image = enemyImages.animation[enemy.imageNumber - 1];
+                } else {
+                    enemy.image = enemyImages.animation[enemy.fixedSpriteIndex];
+                }
+            }
 
             enemy.update = function () {
                 var movementSpeed = enemy.goDownSpeed;
@@ -567,15 +648,7 @@ window.FlubberEnemyEntity = (function () {
                     enemy.animation++;
                     if (enemy.animation > 5) {
                         enemy.animation = 0;
-                        if (enemy.fixedSpriteIndex === null) {
-                            enemy.imageNumber++;
-                            if (enemy.imageNumber > 8) {
-                                enemy.imageNumber = 1;
-                            }
-                            enemy.image = enemyImages.animation[enemy.imageNumber - 1];
-                        } else {
-                            enemy.image = enemyImages.animation[enemy.fixedSpriteIndex];
-                        }
+                        updateEnemyFrame();
                     }
                     return;
                 }
@@ -630,15 +703,7 @@ window.FlubberEnemyEntity = (function () {
                 enemy.animation++;
                 if (enemy.animation > 5) {
                     enemy.animation = 0;
-                    if (enemy.fixedSpriteIndex === null) {
-                        enemy.imageNumber++;
-                        if (enemy.imageNumber > 8) {
-                            enemy.imageNumber = 1;
-                        }
-                        enemy.image = enemyImages.animation[enemy.imageNumber - 1];
-                    } else {
-                        enemy.image = enemyImages.animation[enemy.fixedSpriteIndex];
-                    }
+                    updateEnemyFrame();
                 }
             };
 

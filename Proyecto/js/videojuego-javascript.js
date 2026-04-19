@@ -84,6 +84,8 @@ var game = (function () {
         },
         evilImages = {
             animation : [],
+            type1Idle: [],
+            type1Death: [],
             killed : new Image()
         },
         bossImages = {
@@ -218,6 +220,17 @@ var game = (function () {
             var rightFrame = new Image();
             rightFrame.src = 'images/buenoright/' + frameName;
             playerAnimations.right[frameIndex] = rightFrame;
+
+            var maloIdleFrame = new Image();
+            maloIdleFrame.src = 'images/maloidle/' + frameName;
+            evilImages.type1Idle[frameIndex] = maloIdleFrame;
+        }
+
+        for (var deathFrameIndex = 0; deathFrameIndex < 15; deathFrameIndex++) {
+            var deathFrameName = 'frame_' + padFrameNumber(deathFrameIndex) + '.png';
+            var maloDeathFrame = new Image();
+            maloDeathFrame.src = 'images/malodeath/' + deathFrameName;
+            evilImages.type1Death[deathFrameIndex] = maloDeathFrame;
         }
 
         for (var i = 1; i <= 8; i++) {
@@ -227,6 +240,9 @@ var game = (function () {
             var bossImage = new Image();
             bossImage.src = 'images/jefe' + i + '.png';
             bossImages.animation[i-1] = bossImage;
+        }
+        if (evilImages.type1Idle.length) {
+            evilImages.animation[0] = evilImages.type1Idle[0];
         }
         evilImages.killed.src = 'images/malo_muerto.png';
         bossImages.killed.src = 'images/jefe_muerto.png';
@@ -1976,6 +1992,19 @@ var game = (function () {
         this.fixedSpriteIndex = typeof spriteIndex === 'number' ? spriteIndex : null;
         this.image = enemyImages.animation[this.fixedSpriteIndex !== null ? this.fixedSpriteIndex : 0];
         this.imageNumber = 1;
+        this.customAnimationFrames = null;
+        this.customAnimationFrameIndex = 0;
+        this.deathAnimationFrames = null;
+        this.deathAnimationFrameIndex = 0;
+        this.deathAnimationCompleted = false;
+        this.deathFadeAlpha = 1;
+        this.deathFadeStep = 0.06;
+        this.deathFadeDelayCounter = 8;
+        this.shouldDisappear = false;
+        if (this.fixedSpriteIndex === 0 && enemyImages.type1Idle && enemyImages.type1Idle.length) {
+            this.customAnimationFrames = enemyImages.type1Idle;
+            this.image = this.customAnimationFrames[0];
+        }
         this.animation = 0;
         this.spriteWidth = this.image.width || 40;
         this.spriteHeight = this.image.height || 40;
@@ -2048,9 +2077,56 @@ var game = (function () {
 
 
         this.kill = function() {
+            if (this.dead) {
+                return;
+            }
             this.stopShooting();
             this.dead = true;
+            if (this.fixedSpriteIndex === 0 && enemyImages.type1Death && enemyImages.type1Death.length) {
+                this.customAnimationFrames = null;
+                this.deathAnimationFrames = enemyImages.type1Death;
+                this.deathAnimationFrameIndex = 0;
+                this.deathAnimationCompleted = false;
+                this.deathFadeAlpha = 1;
+                this.deathFadeDelayCounter = 8;
+                this.shouldDisappear = false;
+                this.image = this.deathAnimationFrames[0];
+                return;
+            }
             this.image = enemyImages.killed;
+        };
+
+        this.updateDeathEffect = function() {
+            if (!this.dead || this.shouldDisappear) {
+                return;
+            }
+
+            if (this.deathAnimationFrames && this.deathAnimationFrames.length && !this.deathAnimationCompleted) {
+                this.animation++;
+                if (this.animation > 4) {
+                    this.animation = 0;
+                    if (this.deathAnimationFrameIndex < (this.deathAnimationFrames.length - 1)) {
+                        this.deathAnimationFrameIndex++;
+                        this.image = this.deathAnimationFrames[this.deathAnimationFrameIndex];
+                    } else {
+                        this.deathAnimationCompleted = true;
+                        this.image = this.deathAnimationFrames[this.deathAnimationFrames.length - 1];
+                    }
+                }
+                return;
+            }
+
+            if (this.deathAnimationCompleted) {
+                if (this.deathFadeDelayCounter > 0) {
+                    this.deathFadeDelayCounter--;
+                    return;
+                }
+
+                this.deathFadeAlpha = Math.max(0, this.deathFadeAlpha - this.deathFadeStep);
+                if (this.deathFadeAlpha === 0) {
+                    this.shouldDisappear = true;
+                }
+            }
         };
 
         function moveTowards(enemy, targetX, targetY, speed) {
@@ -2358,7 +2434,10 @@ var game = (function () {
             this.animation++;
             if (this.animation > 5) {
                 this.animation = 0;
-                if (this.fixedSpriteIndex === null) {
+                if (this.customAnimationFrames && this.customAnimationFrames.length) {
+                    this.customAnimationFrameIndex = (this.customAnimationFrameIndex + 1) % this.customAnimationFrames.length;
+                    this.image = this.customAnimationFrames[this.customAnimationFrameIndex];
+                } else if (this.fixedSpriteIndex === null) {
                     this.imageNumber ++;
                     if (this.imageNumber > 8) {
                         this.imageNumber = 1;
@@ -3329,9 +3408,19 @@ var game = (function () {
         drawPlayerShotFeedback(player, playerDrawY);
         for (var e = 0; e < activeEnemies.length; e++) {
             var enemy = activeEnemies[e];
-            if (enemy) {
+            if (enemy && !enemy.shouldDisappear) {
+                var enemyAlpha = typeof enemy.deathFadeAlpha === 'number' ? enemy.deathFadeAlpha : 1;
+                if (enemyAlpha < 1) {
+                    bufferctx.save();
+                    bufferctx.globalAlpha = enemyAlpha;
+                }
                 bufferctx.drawImage(enemy.image, Math.round(enemy.posX), Math.round(enemy.posY));
-                drawEnemyHealthBar(enemy);
+                if (enemyAlpha < 1) {
+                    bufferctx.restore();
+                }
+                if (!enemy.dead) {
+                    drawEnemyHealthBar(enemy);
+                }
             }
         }
 
@@ -3470,12 +3559,24 @@ var game = (function () {
     function updateEnemies() {
         for (var i = 0; i < activeEnemies.length; i++) {
             var enemy = activeEnemies[i];
+            if (!enemy) {
+                continue;
+            }
+
+            if (enemy.shouldDisappear) {
+                activeEnemies.splice(i, 1);
+                i--;
+                continue;
+            }
+
             if (!enemy.dead) {
                 enemy.update();
                 updateBossSpecialEvents(enemy);
                 if (enemy.isOutOfScreen()) {
                     enemy.kill();
                 }
+            } else if (enemy.updateDeathEffect) {
+                enemy.updateDeathEffect();
             }
         }
     }
