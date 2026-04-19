@@ -162,6 +162,8 @@ var game = (function () {
 
     var rewardChoices = [];
     var rewardSelectedIndex = 0;
+    var rewardSelectionUnlockAt = 0;
+    var rewardSelectionCooldownMs = gameConfig.rewardSelectionCooldownMs || 1800;
     var pendingRewardRewarded = false;
     var playerShotDamage = 1;
     var playerShotScale = 1;
@@ -694,6 +696,7 @@ var game = (function () {
         runUpgrades.damageStacks = 0;
         rewardChoices = [];
         rewardSelectedIndex = 0;
+        rewardSelectionUnlockAt = 0;
         playerSpeed = 5;
         playerShotDelay = 250;
         playerShotDamage = 1;
@@ -823,6 +826,7 @@ var game = (function () {
     function openRewardSelector() {
         rewardChoices = generateRewardChoices();
         rewardSelectedIndex = 0;
+        rewardSelectionUnlockAt = new Date().getTime() + rewardSelectionCooldownMs;
         stageState = 'reward_pending';
         stageMessage = 'Elige una recompensa';
         stageTransitionUntil = 0;
@@ -884,6 +888,7 @@ var game = (function () {
         applyReward(selectedReward);
         rewardChoices = [];
         rewardSelectedIndex = 0;
+        rewardSelectionUnlockAt = 0;
         completeStageClear();
     }
 
@@ -920,6 +925,79 @@ var game = (function () {
             outlineColor: arcadeTheme.outline,
             outlineWidth: 2
         });
+
+        drawRewardSelectionCooldownBar(centerX - 160, centerY + 106, 320, 8);
+    }
+
+    function canConfirmRewardSelection() {
+        return new Date().getTime() >= rewardSelectionUnlockAt;
+    }
+
+    function drawRewardSelectionCooldownBar(x, y, width, height) {
+        var nowTime = new Date().getTime();
+        var totalMs = Math.max(1, rewardSelectionCooldownMs);
+        var remainingMs = Math.max(0, rewardSelectionUnlockAt - nowTime);
+        var ratio = Math.max(0, Math.min(1, (totalMs - remainingMs) / totalMs));
+        var fillWidth = Math.round(width * ratio);
+
+        bufferctx.save();
+        bufferctx.fillStyle = 'rgba(20, 12, 28, 0.8)';
+        bufferctx.fillRect(x, y, width, height);
+        bufferctx.fillStyle = 'rgba(0, 255, 140, 0.85)';
+        if (fillWidth > 0) {
+            bufferctx.fillRect(x, y, fillWidth, height);
+        }
+        bufferctx.strokeStyle = 'rgba(255, 210, 120, 0.8)';
+        bufferctx.lineWidth = 1;
+        bufferctx.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
+        bufferctx.restore();
+
+    }
+
+    function getWrappedTextLines(text, maxWidth, font, maxLines) {
+        var content = (text || '').toString();
+        var words = content.split(/\s+/);
+        var lines = [];
+        var currentLine = '';
+
+        bufferctx.save();
+        bufferctx.font = font;
+
+        for (var i = 0; i < words.length; i++) {
+            var word = words[i];
+            if (!word) {
+                continue;
+            }
+
+            var testLine = currentLine ? (currentLine + ' ' + word) : word;
+            if (bufferctx.measureText(testLine).width <= maxWidth) {
+                currentLine = testLine;
+                continue;
+            }
+
+            if (currentLine) {
+                lines.push(currentLine);
+                if (lines.length >= maxLines) {
+                    break;
+                }
+            }
+            currentLine = word;
+        }
+
+        if (currentLine && lines.length < maxLines) {
+            lines.push(currentLine);
+        }
+
+        bufferctx.restore();
+
+        if (lines.length === maxLines && words.length > 0) {
+            var reconstructed = lines.join(' ');
+            if (reconstructed.length < content.length) {
+                lines[maxLines - 1] = lines[maxLines - 1].replace(/[\s\.]*$/, '') + '...';
+            }
+        }
+
+        return lines;
     }
 
     function drawRewardCard(x, y, width, height, reward, selected, sideLabel) {
@@ -945,15 +1023,19 @@ var game = (function () {
                 outlineColor: arcadeTheme.outline,
                 outlineWidth: 2
             });
-            drawArcadeText(reward.description, x + (width / 2), y + 80, {
-                color: '#fff3a3',
-                font: "bold 11px 'Courier New', monospace",
-                align: 'center',
-                glowColor: 'rgba(255, 120, 0, 0.5)',
-                glowBlur: 4,
-                outlineColor: arcadeTheme.outline,
-                outlineWidth: 1
-            });
+            var descriptionFont = "bold 11px 'Courier New', monospace";
+            var descriptionLines = getWrappedTextLines(reward.description, width - 18, descriptionFont, 2);
+            for (var lineIndex = 0; lineIndex < descriptionLines.length; lineIndex++) {
+                drawArcadeText(descriptionLines[lineIndex], x + (width / 2), y + 78 + (lineIndex * 14), {
+                    color: '#fff3a3',
+                    font: descriptionFont,
+                    align: 'center',
+                    glowColor: 'rgba(255, 120, 0, 0.5)',
+                    glowBlur: 4,
+                    outlineColor: arcadeTheme.outline,
+                    outlineWidth: 1
+                });
+            }
         }
     }
 
@@ -1357,6 +1439,7 @@ var game = (function () {
         var enemy = runtime && typeof runtime.createEvil === 'function'
             ? runtime.createEvil(life, shots, speed, enemyType.spriteIndex, selectedType, evilImages)
             : new Evil(life, shots, speed, enemyType.spriteIndex, selectedType);
+        enemy.maxLife = life;
         enemy.pointsToKill = stageConfig.enemyPoints + enemyType.pointsBonus;
         return enemy;
     }
@@ -1773,6 +1856,7 @@ var game = (function () {
         this.posX = getRandomNumber(Math.max(1, canvas.width - this.spriteWidth));
         this.posY = -50;
         this.life = life;
+        this.maxLife = life;
         this.speed = defaultEnemySpeed;
         this.shots = shots;
         this.dead = false;
@@ -2503,6 +2587,7 @@ var game = (function () {
             ? runtime.createEvil(life, shots, speed, typeConfig.spriteIndex, 1, evilImages)
             : new Evil(life, shots, speed, typeConfig.spriteIndex, 1);
 
+        reinforcement.maxLife = life;
         reinforcement.pointsToKill = stageConfig.enemyPoints + (typeConfig.pointsBonus || 0);
         reinforcement.spawnedByBossOne = true;
         activeEnemies.push(reinforcement);
@@ -2814,7 +2899,9 @@ var game = (function () {
                 return;
             }
             if (key === keyMap.fire) {
-                confirmSelectedReward();
+                if (canConfirmRewardSelection()) {
+                    confirmSelectedReward();
+                }
                 e.preventDefault();
                 return;
             }
@@ -3078,6 +3165,7 @@ var game = (function () {
             var enemy = activeEnemies[e];
             if (enemy) {
                 bufferctx.drawImage(enemy.image, Math.round(enemy.posX), Math.round(enemy.posY));
+                drawEnemyHealthBar(enemy);
             }
         }
 
@@ -3343,6 +3431,34 @@ var game = (function () {
         bufferctx.beginPath();
         bufferctx.arc(muzzleX, muzzleY, coreRadius, 0, Math.PI * 2, false);
         bufferctx.fill();
+        bufferctx.restore();
+    }
+
+    function drawEnemyHealthBar(enemy) {
+        if (!enemy || enemy.dead || enemy.isBossLevelOne) {
+            return;
+        }
+
+        var maxLife = Math.max(1, enemy.maxLife || enemy.life || 1);
+        var lifeRatio = Math.max(0, Math.min(1, enemy.life / maxLife));
+        var spriteWidth = (enemy.image && enemy.image.width) || enemy.spriteWidth || 40;
+        var barWidth = Math.max(18, Math.round(spriteWidth * 0.7));
+        var barHeight = 4;
+        var barX = Math.round(enemy.posX + ((spriteWidth - barWidth) / 2));
+        var barY = Math.round(enemy.posY - 7);
+        var fillWidth = Math.round(barWidth * lifeRatio);
+        var fillColor = lifeRatio > 0.6 ? '#59ff8b' : (lifeRatio > 0.3 ? '#ffd447' : '#ff4d5a');
+
+        bufferctx.save();
+        bufferctx.fillStyle = 'rgba(18, 10, 22, 0.82)';
+        bufferctx.fillRect(barX, barY, barWidth, barHeight);
+        if (fillWidth > 0) {
+            bufferctx.fillStyle = fillColor;
+            bufferctx.fillRect(barX, barY, fillWidth, barHeight);
+        }
+        bufferctx.strokeStyle = 'rgba(255, 230, 170, 0.75)';
+        bufferctx.lineWidth = 1;
+        bufferctx.strokeRect(barX + 0.5, barY + 0.5, barWidth - 1, barHeight - 1);
         bufferctx.restore();
     }
 
