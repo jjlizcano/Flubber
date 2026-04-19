@@ -46,6 +46,7 @@ window.FlubberEnemyEntity = (function () {
                 customAnimationFrameIndex: 0,
                 deathAnimationFrames: null,
                 deathAnimationFrameIndex: 0,
+                deathAnimationFinalFrame: null,
                 deathAnimationCompleted: false,
                 deathFadeAlpha: 1,
                 deathFadeStep: 0.06,
@@ -191,6 +192,48 @@ window.FlubberEnemyEntity = (function () {
                 rightShot.add();
             }
 
+            function getFirstFrame(frames) {
+                function isUsableFrame(frame) {
+                    if (!frame) {
+                        return false;
+                    }
+                    var frameWidth = typeof frame.naturalWidth === 'number' ? frame.naturalWidth : frame.width;
+                    var frameHeight = typeof frame.naturalHeight === 'number' ? frame.naturalHeight : frame.height;
+                    return !!(frameWidth && frameHeight);
+                }
+
+                if (!frames || !frames.length) {
+                    return null;
+                }
+                for (var i = 0; i < frames.length; i++) {
+                    if (isUsableFrame(frames[i])) {
+                        return frames[i];
+                    }
+                }
+                return null;
+            }
+
+            function getLastFrame(frames) {
+                function isUsableFrame(frame) {
+                    if (!frame) {
+                        return false;
+                    }
+                    var frameWidth = typeof frame.naturalWidth === 'number' ? frame.naturalWidth : frame.width;
+                    var frameHeight = typeof frame.naturalHeight === 'number' ? frame.naturalHeight : frame.height;
+                    return !!(frameWidth && frameHeight);
+                }
+
+                if (!frames || !frames.length) {
+                    return null;
+                }
+                for (var i = frames.length - 1; i >= 0; i--) {
+                    if (isUsableFrame(frames[i])) {
+                        return frames[i];
+                    }
+                }
+                return null;
+            }
+
             function updateHunterMovement(movementSpeed, speedMultiplier) {
                 function setHunterAnimationFrames() {
                     var targetFrames = enemyImages.type3Idle;
@@ -245,6 +288,7 @@ window.FlubberEnemyEntity = (function () {
                 }
 
                 if (enemy.hunterState === 'charge') {
+                    enemy.renderAngle = 0;
                     enemy.hunterChargePhase += 0.35;
                     enemy.posY += Math.max(0.12, movementSpeed * 0.12);
                     enemy.posX = enemy.hunterChargeCenterX + Math.sin(enemy.hunterChargePhase) * enemy.hunterChargeAmplitude;
@@ -274,6 +318,16 @@ window.FlubberEnemyEntity = (function () {
                 }
 
                 if (enemy.hunterState === 'dash') {
+                    var currentCenterX = enemy.posX + (enemy.spriteWidth / 2);
+                    var currentCenterY = enemy.posY + (enemy.spriteHeight / 2);
+                    var targetCenterX = enemy.hunterDashTargetX + (enemy.spriteWidth / 2);
+                    var targetCenterY = enemy.hunterDashTargetY + (enemy.spriteHeight / 2);
+                    var dashDeltaX = targetCenterX - currentCenterX;
+                    var dashDeltaY = targetCenterY - currentCenterY;
+                    if (dashDeltaX !== 0 || dashDeltaY !== 0) {
+                        enemy.renderAngle = (Math.atan2(dashDeltaY, dashDeltaX) - (Math.PI / 2)) * (180 / Math.PI);
+                    }
+
                     var reachedTarget = moveTowards(
                         enemy,
                         enemy.hunterDashTargetX,
@@ -283,12 +337,14 @@ window.FlubberEnemyEntity = (function () {
                     if (reachedTarget) {
                         enemy.hunterDashesCompleted = (enemy.hunterDashesCompleted || 0) + 1;
                         enemy.hunterState = 'return';
+                        enemy.renderAngle = 0;
                         setHunterAnimationFrames();
                     }
                     return;
                 }
 
                 if (enemy.hunterState === 'return') {
+                    enemy.renderAngle = 0;
                     var returnedToOrigin = moveTowards(
                         enemy,
                         enemy.hunterDashStartX,
@@ -615,22 +671,36 @@ window.FlubberEnemyEntity = (function () {
                     enemy.customAnimationFrames = null;
                     enemy.deathAnimationFrames = enemyImages.type1Death;
                     enemy.deathAnimationFrameIndex = 0;
+                    enemy.deathAnimationFinalFrame = getLastFrame(enemy.deathAnimationFrames) || enemy.image;
                     enemy.deathAnimationCompleted = false;
                     enemy.deathFadeAlpha = 1;
                     enemy.deathFadeDelayCounter = 8;
                     enemy.shouldDisappear = false;
-                    enemy.image = enemy.deathAnimationFrames[0];
+                    enemy.image = getFirstFrame(enemy.deathAnimationFrames) || enemy.image;
                     return;
                 }
                 if (enemy.fixedSpriteIndex === 1 && enemyImages.type2Death && enemyImages.type2Death.length) {
                     enemy.customAnimationFrames = null;
                     enemy.deathAnimationFrames = enemyImages.type2Death;
                     enemy.deathAnimationFrameIndex = 0;
+                    enemy.deathAnimationFinalFrame = getLastFrame(enemy.deathAnimationFrames) || enemy.image;
                     enemy.deathAnimationCompleted = false;
                     enemy.deathFadeAlpha = 1;
                     enemy.deathFadeDelayCounter = 8;
                     enemy.shouldDisappear = false;
-                    enemy.image = enemy.deathAnimationFrames[0];
+                    enemy.image = getFirstFrame(enemy.deathAnimationFrames) || enemy.image;
+                    return;
+                }
+                if (enemy.enemyType === 3 && enemyImages.type3Death && enemyImages.type3Death.length) {
+                    enemy.customAnimationFrames = null;
+                    enemy.deathAnimationFrames = enemyImages.type3Death;
+                    enemy.deathAnimationFrameIndex = 0;
+                    enemy.deathAnimationFinalFrame = getLastFrame(enemy.deathAnimationFrames) || enemy.image;
+                    enemy.deathAnimationCompleted = false;
+                    enemy.deathFadeAlpha = 1;
+                    enemy.deathFadeDelayCounter = 8;
+                    enemy.shouldDisappear = false;
+                    enemy.image = getFirstFrame(enemy.deathAnimationFrames) || enemy.image;
                     return;
                 }
                 enemy.image = enemyImages.killed;
@@ -647,16 +717,24 @@ window.FlubberEnemyEntity = (function () {
                         enemy.animation = 0;
                         if (enemy.deathAnimationFrameIndex < (enemy.deathAnimationFrames.length - 1)) {
                             enemy.deathAnimationFrameIndex++;
-                            enemy.image = enemy.deathAnimationFrames[enemy.deathAnimationFrameIndex];
+                            var deathFrame = enemy.deathAnimationFrames[enemy.deathAnimationFrameIndex];
+                            var deathFrameWidth = deathFrame && (typeof deathFrame.naturalWidth === 'number' ? deathFrame.naturalWidth : deathFrame.width);
+                            var deathFrameHeight = deathFrame && (typeof deathFrame.naturalHeight === 'number' ? deathFrame.naturalHeight : deathFrame.height);
+                            if (deathFrameWidth && deathFrameHeight) {
+                                enemy.image = deathFrame;
+                            }
                         } else {
                             enemy.deathAnimationCompleted = true;
-                            enemy.image = enemy.deathAnimationFrames[enemy.deathAnimationFrames.length - 1];
+                            enemy.image = enemy.deathAnimationFinalFrame || enemy.deathAnimationFrames[enemy.deathAnimationFrames.length - 1];
                         }
                     }
                     return;
                 }
 
                 if (enemy.deathAnimationCompleted) {
+                    if (enemy.deathAnimationFinalFrame) {
+                        enemy.image = enemy.deathAnimationFinalFrame;
+                    }
                     if (enemy.deathFadeDelayCounter > 0) {
                         enemy.deathFadeDelayCounter--;
                         return;

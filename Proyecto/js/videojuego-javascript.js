@@ -91,6 +91,7 @@ var game = (function () {
             type3Idle: [],
             type3Charge: [],
             type3Dash: [],
+            type3Death: [],
             killed : new Image()
         },
         bossImages = {
@@ -339,6 +340,10 @@ var game = (function () {
             var malo2DeathFrame = new Image();
             malo2DeathFrame.src = 'images/malo2death/' + deathFrameName;
             evilImages.type2Death[deathFrameIndex] = malo2DeathFrame;
+
+            var malo3DeathFrame = new Image();
+            malo3DeathFrame.src = 'images/malo3death/' + deathFrameName;
+            evilImages.type3Death[deathFrameIndex] = malo3DeathFrame;
         }
 
         for (var type2FrameIndex = 0; type2FrameIndex < playerAnimations.frameCount; type2FrameIndex++) {
@@ -2455,6 +2460,7 @@ var game = (function () {
         this.customAnimationFrameIndex = 0;
         this.deathAnimationFrames = null;
         this.deathAnimationFrameIndex = 0;
+        this.deathAnimationFinalFrame = null;
         this.deathAnimationCompleted = false;
         this.deathFadeAlpha = 1;
         this.deathFadeStep = 0.06;
@@ -2542,6 +2548,48 @@ var game = (function () {
         this.maxX = this.minX + maxTravel;
         this.direction = 'D';
 
+        function getFirstFrame(frames) {
+            function isUsableFrame(frame) {
+                if (!frame) {
+                    return false;
+                }
+                var frameWidth = typeof frame.naturalWidth === 'number' ? frame.naturalWidth : frame.width;
+                var frameHeight = typeof frame.naturalHeight === 'number' ? frame.naturalHeight : frame.height;
+                return !!(frameWidth && frameHeight);
+            }
+
+            if (!frames || !frames.length) {
+                return null;
+            }
+            for (var i = 0; i < frames.length; i++) {
+                if (isUsableFrame(frames[i])) {
+                    return frames[i];
+                }
+            }
+            return null;
+        }
+
+        function getLastFrame(frames) {
+            function isUsableFrame(frame) {
+                if (!frame) {
+                    return false;
+                }
+                var frameWidth = typeof frame.naturalWidth === 'number' ? frame.naturalWidth : frame.width;
+                var frameHeight = typeof frame.naturalHeight === 'number' ? frame.naturalHeight : frame.height;
+                return !!(frameWidth && frameHeight);
+            }
+
+            if (!frames || !frames.length) {
+                return null;
+            }
+            for (var i = frames.length - 1; i >= 0; i--) {
+                if (isUsableFrame(frames[i])) {
+                    return frames[i];
+                }
+            }
+            return null;
+        }
+
 
         this.kill = function() {
             if (this.dead) {
@@ -2564,22 +2612,36 @@ var game = (function () {
                 this.customAnimationFrames = null;
                 this.deathAnimationFrames = enemyImages.type1Death;
                 this.deathAnimationFrameIndex = 0;
+                this.deathAnimationFinalFrame = getLastFrame(this.deathAnimationFrames) || this.image;
                 this.deathAnimationCompleted = false;
                 this.deathFadeAlpha = 1;
                 this.deathFadeDelayCounter = 8;
                 this.shouldDisappear = false;
-                this.image = this.deathAnimationFrames[0];
+                this.image = getFirstFrame(this.deathAnimationFrames) || this.image;
                 return;
             }
             if (this.fixedSpriteIndex === 1 && enemyImages.type2Death && enemyImages.type2Death.length) {
                 this.customAnimationFrames = null;
                 this.deathAnimationFrames = enemyImages.type2Death;
                 this.deathAnimationFrameIndex = 0;
+                this.deathAnimationFinalFrame = getLastFrame(this.deathAnimationFrames) || this.image;
                 this.deathAnimationCompleted = false;
                 this.deathFadeAlpha = 1;
                 this.deathFadeDelayCounter = 8;
                 this.shouldDisappear = false;
-                this.image = this.deathAnimationFrames[0];
+                this.image = getFirstFrame(this.deathAnimationFrames) || this.image;
+                return;
+            }
+            if (this.enemyType === 3 && enemyImages.type3Death && enemyImages.type3Death.length) {
+                this.customAnimationFrames = null;
+                this.deathAnimationFrames = enemyImages.type3Death;
+                this.deathAnimationFrameIndex = 0;
+                this.deathAnimationFinalFrame = getLastFrame(this.deathAnimationFrames) || this.image;
+                this.deathAnimationCompleted = false;
+                this.deathFadeAlpha = 1;
+                this.deathFadeDelayCounter = 8;
+                this.shouldDisappear = false;
+                this.image = getFirstFrame(this.deathAnimationFrames) || this.image;
                 return;
             }
             this.image = enemyImages.killed;
@@ -2596,16 +2658,24 @@ var game = (function () {
                     this.animation = 0;
                     if (this.deathAnimationFrameIndex < (this.deathAnimationFrames.length - 1)) {
                         this.deathAnimationFrameIndex++;
-                        this.image = this.deathAnimationFrames[this.deathAnimationFrameIndex];
+                        var deathFrame = this.deathAnimationFrames[this.deathAnimationFrameIndex];
+                        var deathFrameWidth = deathFrame && (typeof deathFrame.naturalWidth === 'number' ? deathFrame.naturalWidth : deathFrame.width);
+                        var deathFrameHeight = deathFrame && (typeof deathFrame.naturalHeight === 'number' ? deathFrame.naturalHeight : deathFrame.height);
+                        if (deathFrameWidth && deathFrameHeight) {
+                            this.image = deathFrame;
+                        }
                     } else {
                         this.deathAnimationCompleted = true;
-                        this.image = this.deathAnimationFrames[this.deathAnimationFrames.length - 1];
+                        this.image = this.deathAnimationFinalFrame || this.deathAnimationFrames[this.deathAnimationFrames.length - 1];
                     }
                 }
                 return;
             }
 
             if (this.deathAnimationCompleted) {
+                if (this.deathAnimationFinalFrame) {
+                    this.image = this.deathAnimationFinalFrame;
+                }
                 if (this.deathFadeDelayCounter > 0) {
                     this.deathFadeDelayCounter--;
                     return;
@@ -2683,6 +2753,7 @@ var game = (function () {
             }
 
             if (enemy.hunterState === 'charge') {
+                enemy.renderAngle = 0;
                 enemy.hunterChargePhase += 0.35;
                 enemy.posY += Math.max(0.12, movementSpeed * 0.12);
                 enemy.posX = enemy.hunterChargeCenterX + Math.sin(enemy.hunterChargePhase) * enemy.hunterChargeAmplitude;
@@ -2711,16 +2782,28 @@ var game = (function () {
             }
 
             if (enemy.hunterState === 'dash') {
+                var currentCenterX = enemy.posX + (enemy.spriteWidth / 2);
+                var currentCenterY = enemy.posY + (enemy.spriteHeight / 2);
+                var targetCenterX = enemy.hunterDashTargetX + (enemy.spriteWidth / 2);
+                var targetCenterY = enemy.hunterDashTargetY + (enemy.spriteHeight / 2);
+                var dashDeltaX = targetCenterX - currentCenterX;
+                var dashDeltaY = targetCenterY - currentCenterY;
+                if (dashDeltaX !== 0 || dashDeltaY !== 0) {
+                    enemy.renderAngle = (Math.atan2(dashDeltaY, dashDeltaX) - (Math.PI / 2)) * (180 / Math.PI);
+                }
+
                 var reachedTarget = moveTowards(enemy, enemy.hunterDashTargetX, enemy.hunterDashTargetY,
                     Math.max(4.2, enemy.hunterDashSpeed));
                 if (reachedTarget) {
                     enemy.hunterState = 'return';
+                    enemy.renderAngle = 0;
                     setHunterAnimationFrames();
                 }
                 return;
             }
 
             if (enemy.hunterState === 'return') {
+                enemy.renderAngle = 0;
                 var returnedToOrigin = moveTowards(enemy, enemy.hunterDashStartX, enemy.hunterDashStartY,
                     Math.max(2.6, enemy.hunterReturnSpeed));
                 if (returnedToOrigin) {
@@ -3573,8 +3656,10 @@ var game = (function () {
                 continue;
             }
 
-            if (shotRect.left <= (enemy.posX + enemy.image.width) && shotRect.right >= enemy.posX &&
-                shotRect.top <= (enemy.posY + enemy.image.height) && shotRect.bottom >= enemy.posY) {
+            var enemyWidth = (enemy.image && enemy.image.width) || enemy.spriteWidth || 40;
+            var enemyHeight = (enemy.image && enemy.image.height) || enemy.spriteHeight || 40;
+            if (shotRect.left <= (enemy.posX + enemyWidth) && shotRect.right >= enemy.posX &&
+                shotRect.top <= (enemy.posY + enemyHeight) && shotRect.bottom >= enemy.posY) {
                 var damage = shot.damage || playerShotDamage || 1;
                 enemy.life -= damage;
                 if (runUpgrades.slowStacks > 0) {
@@ -3590,7 +3675,7 @@ var game = (function () {
                     shot.isHoming = false;
                     shot.vy = -Math.max(2, shot.speed * 0.75);
                     shot.vx = getBounceHorizontalSpeed(shot, enemy);
-                    shot.posX = enemy.posX + (enemy.image.width / 2);
+                    shot.posX = enemy.posX + (enemyWidth / 2);
                     shot.posY = enemy.posY - shotHeight - 2;
                     return 'keep';
                 }
@@ -4055,6 +4140,8 @@ var game = (function () {
                             enemyAngle = enemy.renderAngle;
                         }
                     }
+                } else if (!enemy.dead && enemy.enemyType === 3 && enemy.hunterState === 'dash' && typeof enemy.renderAngle === 'number') {
+                    enemyAngle = enemy.renderAngle;
                 }
                 if (enemyAlpha < 1 || enemyAngle !== 0) {
                     bufferctx.save();
@@ -4286,8 +4373,10 @@ var game = (function () {
                 continue;
             }
 
-            var enemyCenterX = enemy.posX + (enemy.image.width / 2);
-            var enemyCenterY = enemy.posY + (enemy.image.height / 2);
+            var enemyWidth = (enemy.image && enemy.image.width) || enemy.spriteWidth || 40;
+            var enemyHeight = (enemy.image && enemy.image.height) || enemy.spriteHeight || 40;
+            var enemyCenterX = enemy.posX + (enemyWidth / 2);
+            var enemyCenterY = enemy.posY + (enemyHeight / 2);
             var enemyDistance = Math.abs(enemyCenterX - playerShot.posX) + Math.max(0, playerShot.posY - enemyCenterY);
             if (nearestDistance === null || enemyDistance < nearestDistance) {
                 nearestDistance = enemyDistance;
@@ -4309,7 +4398,8 @@ var game = (function () {
             if (enemy.dead || enemy === impactedEnemy) {
                 continue;
             }
-            var enemyCenter = enemy.posX + (enemy.image.width / 2);
+            var enemyWidth = (enemy.image && enemy.image.width) || enemy.spriteWidth || 40;
+            var enemyCenter = enemy.posX + (enemyWidth / 2);
             var distance = Math.abs(enemyCenter - playerShot.posX);
             if (nearestDistance === null || distance < nearestDistance) {
                 nearestDistance = distance;
@@ -4319,7 +4409,8 @@ var game = (function () {
 
         var horizontalSpeed = Math.max(1.5, playerShot.speed * 0.65);
         if (nearestEnemy) {
-            return (nearestEnemy.posX + (nearestEnemy.image.width / 2)) >= playerShot.posX ? horizontalSpeed : -horizontalSpeed;
+            var nearestEnemyWidth = (nearestEnemy.image && nearestEnemy.image.width) || nearestEnemy.spriteWidth || 40;
+            return (nearestEnemy.posX + (nearestEnemyWidth / 2)) >= playerShot.posX ? horizontalSpeed : -horizontalSpeed;
         }
         return getRandomNumber(2) === 0 ? -horizontalSpeed : horizontalSpeed;
     }
