@@ -171,8 +171,17 @@ window.FlubberCollisionSystem = (function () {
 
     function getEnemyShotBounds(shot) {
         var width = (shot && shot.image && shot.image.width) ? shot.image.width : 10;
-        var height = (shot && shot.image && shot.image.height) ? shot.image.height : 20;
-        return getRectBounds(shot.posX, shot.posY, width, height);
+        var height = (shot && shot.image && shot.image.height) ? shot.image.height : 10;
+        var insetX = Math.max(1, Math.round(width * 0.1));
+        var insetY = Math.max(1, Math.round(height * 0.1));
+        var hitboxWidth = Math.max(4, width - (insetX * 2));
+        var hitboxHeight = Math.max(8, height - (insetY * 2));
+        return getRectBounds(
+            shot.posX + insetX,
+            shot.posY + insetY,
+            hitboxWidth,
+            hitboxHeight
+        );
     }
 
     return {
