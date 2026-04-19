@@ -1554,6 +1554,7 @@ var game = (function () {
         player.recoilOffsetY = 0;
         player.recoilUntil = 0;
         player.shootFxUntil = 0;
+        player.centerOnFirstFrame = true;
 
         player.triggerShotFeedback = function() {
             var currentTime = new Date().getTime();
@@ -1600,6 +1601,10 @@ var game = (function () {
             if (frameImage && frameImage.width) {
                 player.width = frameImage.width;
                 player.height = frameImage.height;
+                if (player.centerOnFirstFrame) {
+                    player.posX = Math.round((canvas.width - player.width) / 2);
+                    player.centerOnFirstFrame = false;
+                }
             }
 
             return frameImage;
@@ -1658,14 +1663,23 @@ var game = (function () {
             }
         };
 
-        player.killPlayer = function() {
+        player.killPlayer = function(damageTimestamp) {
             if (this.life > 1) {
+                var hitTime = typeof damageTimestamp === 'number' ? damageTimestamp : new Date().getTime();
+                var hitPosX = this.posX;
+                var hitPosY = this.posY;
+                var remainingLife = this.life - 1;
+                var currentScore = this.score;
                 this.dead = true;
                 evilShotsBuffer.splice(0, evilShotsBuffer.length);
                 playerShotsBuffer.splice(0, playerShotsBuffer.length);
                 this.src = playerKilledImage.src;
                 setTimeout(function () {
-                    player = new Player(player.life - 1, player.score);
+                    player = new Player(remainingLife, currentScore);
+                    player.posX = Math.max(5, Math.min(hitPosX, canvas.width - player.width - 5));
+                    player.posY = Math.max(0, Math.min(hitPosY, canvas.height - player.height));
+                    player.centerOnFirstFrame = false;
+                    player.invulnerableUntil = hitTime + 2000;
                 }, 500);
 
             } else {
@@ -3058,6 +3072,7 @@ var game = (function () {
         }
         var playerDrawY = player.posY + (player.recoilOffsetY || 0);
         bufferctx.drawImage(player.getCurrentFrameImage ? player.getCurrentFrameImage() : player, player.posX, playerDrawY);
+        drawPlayerImmunityEffect(player, playerDrawY);
         drawPlayerShotFeedback(player, playerDrawY);
         for (var e = 0; e < activeEnemies.length; e++) {
             var enemy = activeEnemies[e];
@@ -3136,7 +3151,7 @@ var game = (function () {
             if (player.dead) {
                 return;
             }
-            if (!evilShot.isHittingPlayer()) {
+            if (!evilShot.isHittingPlayer() || (player.invulnerableUntil && new Date().getTime() < player.invulnerableUntil)) {
                 var vx = typeof evilShot.vx === 'number' ? evilShot.vx : 0;
                 var vy = typeof evilShot.vy === 'number' ? evilShot.vy : evilShot.speed;
                 if (evilShot.isBossDiagonalShot) {
@@ -3172,6 +3187,14 @@ var game = (function () {
                     evilShot.posX += vx;
                 }
                 evilShot.posY += vy;
+
+                // Si la bala toca al jugador y no hay inmunidad, se consume.
+                if (evilShot.isHittingPlayer() && !(player.invulnerableUntil && new Date().getTime() < player.invulnerableUntil)) {
+                    evilShot.deleteShot(parseInt(evilShot.identifier, 10));
+                    handlePlayerDamage(true);
+                    return;
+                }
+
                 if (evilShot.posY <= canvas.height && evilShot.posX >= -40 && evilShot.posX <= (canvas.width + 40)) {
                     bufferctx.drawImage(evilShot.image, evilShot.posX, evilShot.posY);
                 } else {
@@ -3323,6 +3346,32 @@ var game = (function () {
         bufferctx.restore();
     }
 
+    function drawPlayerImmunityEffect(playerEntity, drawPosY) {
+        if (!playerEntity || playerEntity.dead) {
+            return;
+        }
+
+        var nowTime = new Date().getTime();
+        if (!playerEntity.invulnerableUntil || nowTime >= playerEntity.invulnerableUntil) {
+            return;
+        }
+
+        var centerX = playerEntity.posX + (playerEntity.width / 2);
+        var centerY = drawPosY + Math.round(playerEntity.height * 0.5);
+        var pulse = (Math.sin(nowTime / 85) + 1) / 2;
+        var baseRadius = Math.max(12, Math.round(Math.max(playerEntity.width, playerEntity.height) * 0.38));
+        var radius = baseRadius + Math.round(pulse * 1);
+
+        bufferctx.save();
+        bufferctx.globalCompositeOperation = 'lighter';
+        bufferctx.strokeStyle = 'rgba(140, 235, 255, ' + (0.55 + (pulse * 0.35)) + ')';
+        bufferctx.lineWidth = 2;
+        bufferctx.beginPath();
+        bufferctx.arc(centerX, centerY, radius, 0, Math.PI * 2, false);
+        bufferctx.stroke();
+        bufferctx.restore();
+    }
+
     function handlePlayerDamage(fromProjectile) {
         var nowTime = new Date().getTime();
         if (player.invulnerableUntil && nowTime < player.invulnerableUntil) {
@@ -3338,8 +3387,8 @@ var game = (function () {
             player.invulnerableUntil = nowTime + 800;
             return;
         }
-        player.invulnerableUntil = nowTime + 800;
-        player.killPlayer();
+        player.invulnerableUntil = nowTime + 2000;
+        player.killPlayer(nowTime);
     }
 
     /******************************* MEJORES PUNTUACIONES (LOCALSTORAGE) *******************************/
