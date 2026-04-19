@@ -103,6 +103,9 @@ var game = (function () {
         now = 0,
         debugHitboxes = false;
 
+    var bossWeaponUnlockNoticeUntil = 0;
+    var bossWeaponUnlockNoticeDuration = gameConfig.bossWeaponUnlockNoticeDurationMs || 1400;
+
     var arcadeTheme = {
         panelBg: 'rgba(25, 8, 32, 0.7)',
         panelStroke: 'rgba(255, 180, 0, 0.75)',
@@ -290,6 +293,7 @@ var game = (function () {
         playerNameInputConfirmed = false;
         playerNameInputBuffer = '';
         playerNameInputCursorBlink = 0;
+        bossWeaponUnlockNoticeUntil = 0;
         
         // Reset upgrades
         resetRunUpgrades();
@@ -695,6 +699,114 @@ var game = (function () {
             outlineColor: arcadeTheme.outline,
             outlineWidth: 2
         });
+
+        if (currentStageType === 'boss') {
+            drawBossOverallHealthBar();
+            drawBossWeaponUnlockNotice();
+        }
+    }
+
+    function drawBossWeaponUnlockNotice() {
+        var nowTime = new Date().getTime();
+        if (nowTime >= bossWeaponUnlockNoticeUntil) {
+            return;
+        }
+
+        var lifeLeftRatio = Math.max(0, Math.min(1, (bossWeaponUnlockNoticeUntil - nowTime) / Math.max(1, bossWeaponUnlockNoticeDuration)));
+        var pulse = (Math.sin(nowTime / 90) + 1) / 2;
+        var alpha = 0.45 + (lifeLeftRatio * 0.45);
+
+        drawArcadeText('NUEVAS HITBOXES ACTIVAS', canvas.width / 2, 97, {
+            color: 'rgba(255, 235, 132, ' + alpha + ')',
+            font: "bold 13px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 100, 70, ' + (0.45 + (pulse * 0.4)) + ')',
+            glowBlur: 7,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
+    }
+
+    function getActiveBossEnemy() {
+        for (var i = 0; i < activeEnemies.length; i++) {
+            var enemy = activeEnemies[i];
+            if (enemy && !enemy.dead && enemy.isBossLevelOne && enemy.bossCombat) {
+                return enemy;
+            }
+        }
+        return null;
+    }
+
+    function getBossOverallLifeSnapshot() {
+        var boss = getActiveBossEnemy();
+        if (!boss || !boss.bossCombat || !boss.bossCombat.weapons || !boss.bossCombat.weapons.length) {
+            return null;
+        }
+
+        var totalLife = 0;
+        var totalMaxLife = 0;
+        for (var i = 0; i < boss.bossCombat.weapons.length; i++) {
+            var weapon = boss.bossCombat.weapons[i];
+            if (!weapon) {
+                continue;
+            }
+            var maxLife = Math.max(1, weapon.maxLife || weapon.life || 1);
+            var life = Math.max(0, weapon.life || 0);
+            totalLife += life;
+            totalMaxLife += maxLife;
+        }
+
+        if (totalMaxLife <= 0) {
+            return null;
+        }
+
+        return {
+            life: totalLife,
+            maxLife: totalMaxLife,
+            ratio: Math.max(0, Math.min(1, totalLife / totalMaxLife))
+        };
+    }
+
+    function drawBossOverallHealthBar() {
+        var snapshot = getBossOverallLifeSnapshot();
+        if (!snapshot) {
+            return;
+        }
+
+        var barWidth = Math.max(220, Math.round(canvas.width * 0.52));
+        var barHeight = 10;
+        var barX = Math.round((canvas.width - barWidth) / 2);
+        var barY = 68;
+        var fillWidth = Math.round(barWidth * snapshot.ratio);
+        var isCritical = snapshot.ratio > 0 && snapshot.ratio <= 0.3;
+        var pulse = isCritical ? ((Math.sin(new Date().getTime() / 130) + 1) / 2) : 0;
+        var fillColor = snapshot.ratio > 0.6 ? '#59ff8b' : (snapshot.ratio > 0.3 ? '#ffd447' : '#ff4d5a');
+
+        drawArcadeText('BOSS', barX - 10, barY + 9, {
+            color: '#ffe680',
+            font: "bold 12px 'Courier New', monospace",
+            align: 'right',
+            glowColor: 'rgba(255, 120, 80, 0.85)',
+            glowBlur: 5,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
+
+        bufferctx.save();
+        if (isCritical) {
+            bufferctx.shadowBlur = 9 + Math.round(pulse * 6);
+            bufferctx.shadowColor = 'rgba(255, 80, 95, ' + (0.35 + (pulse * 0.5)) + ')';
+        }
+        bufferctx.fillStyle = 'rgba(16, 9, 22, 0.93)';
+        bufferctx.fillRect(barX, barY, barWidth, barHeight);
+        if (fillWidth > 0) {
+            bufferctx.fillStyle = fillColor;
+            bufferctx.fillRect(barX, barY, fillWidth, barHeight);
+        }
+        bufferctx.strokeStyle = 'rgba(255, 235, 180, 0.94)';
+        bufferctx.lineWidth = 1.5;
+        bufferctx.strokeRect(barX + 0.5, barY + 0.5, barWidth - 1, barHeight - 1);
+        bufferctx.restore();
     }
 
     function getRandomNumber(range) {
@@ -1379,6 +1491,7 @@ var game = (function () {
         playerShotsBuffer.splice(0, playerShotsBuffer.length);
         pendingStageSpawns = 0;
         spawnedStageEnemies = 0;
+        bossWeaponUnlockNoticeUntil = 0;
     }
 
     function clearStageSpawnScheduler() {
@@ -2711,6 +2824,49 @@ var game = (function () {
         return cfgRoot.bossLevelOne || {};
     }
 
+    function isBossWeaponVulnerable(enemy, weaponIndex) {
+        if (!enemy || !enemy.bossCombat || !enemy.bossCombat.weapons) {
+            return false;
+        }
+        var weapon = enemy.bossCombat.weapons[weaponIndex];
+        if (!weapon || weapon.destroyed) {
+            return false;
+        }
+        return !!weapon.unlocked;
+    }
+
+    function getVulnerableBossWeaponHitboxes(enemy) {
+        var allHitboxes = getBossWeaponHitboxes(enemy);
+        var vulnerableHitboxes = [];
+        for (var i = 0; i < allHitboxes.length; i++) {
+            if (isBossWeaponVulnerable(enemy, allHitboxes[i].index)) {
+                vulnerableHitboxes.push(allHitboxes[i]);
+            }
+        }
+        return vulnerableHitboxes;
+    }
+
+    function unlockRemainingBossWeapons(enemy) {
+        if (!enemy || !enemy.bossCombat || !enemy.bossCombat.weapons) {
+            return;
+        }
+
+        var combat = enemy.bossCombat;
+        if (combat.secondaryWaveUnlocked) {
+            return;
+        }
+
+        for (var i = 0; i < combat.weapons.length; i++) {
+            var weapon = combat.weapons[i];
+            if (weapon && !weapon.destroyed) {
+                weapon.unlocked = true;
+            }
+        }
+
+        combat.secondaryWaveUnlocked = true;
+        bossWeaponUnlockNoticeUntil = new Date().getTime() + bossWeaponUnlockNoticeDuration;
+    }
+
     function countActiveBossBombs() {
         var alive = 0;
         for (var i = 0; i < bossBombs.length; i++) {
@@ -2928,7 +3084,7 @@ var game = (function () {
         }
 
         var weapon = enemy.bossCombat.weapons[weaponIndex];
-        if (!weapon || weapon.destroyed) {
+        if (!weapon || weapon.destroyed || !weapon.unlocked) {
             return false;
         }
 
@@ -2944,6 +3100,7 @@ var game = (function () {
         var destroyedCount = countDestroyedBossWeapons(enemy);
         if (destroyedCount >= 1 && !combat.firstWeaponDestroyedTriggered) {
             combat.firstWeaponDestroyedTriggered = true;
+            unlockRemainingBossWeapons(enemy);
             combat.nextBombSpawnAt = new Date().getTime() + Math.max(900, getBossBattleConfig().bombSpawnIntervalMs || 2200);
         }
         if (destroyedCount >= 2 && !combat.secondWeaponDestroyedTriggered) {
@@ -2988,7 +3145,7 @@ var game = (function () {
             }
 
             if (enemy.isBossLevelOne && enemy.bossCombat) {
-                var weaponHitboxes = getBossWeaponHitboxes(enemy);
+                var weaponHitboxes = getVulnerableBossWeaponHitboxes(enemy);
                 for (var w = 0; w < weaponHitboxes.length; w++) {
                     var weaponBox = weaponHitboxes[w];
                     if (!rectsOverlap(shotRect, weaponBox)) {
@@ -3012,6 +3169,7 @@ var game = (function () {
                     return false;
                 }
 
+                // Las hitboxes bloqueadas no absorben daño ni consumen el disparo: la bala atraviesa.
                 continue;
             }
 
@@ -3474,6 +3632,7 @@ var game = (function () {
                 }
                 if (!enemy.dead) {
                     drawEnemyHealthBar(enemy);
+                    drawBossWeaponHealthBars(enemy);
                 }
             }
         }
@@ -3660,7 +3819,7 @@ var game = (function () {
             }
 
             if (enemy.isBossLevelOne && enemy.bossCombat) {
-                var weaponHitboxes = getBossWeaponHitboxes(enemy);
+                var weaponHitboxes = getVulnerableBossWeaponHitboxes(enemy);
                 for (var w = 0; w < weaponHitboxes.length; w++) {
                     var weaponBox = weaponHitboxes[w];
                     var weaponCenterX = weaponBox.left + (weaponBox.width / 2);
@@ -3781,6 +3940,61 @@ var game = (function () {
         bufferctx.lineWidth = 1;
         bufferctx.strokeRect(barX + 0.5, barY + 0.5, barWidth - 1, barHeight - 1);
         bufferctx.restore();
+    }
+
+    function drawBossWeaponHealthBars(enemy) {
+        if (!enemy || enemy.dead || !enemy.isBossLevelOne || !enemy.bossCombat || !enemy.bossCombat.weapons) {
+            return;
+        }
+
+        var nowTime = new Date().getTime();
+        var weaponHitboxes = getBossWeaponHitboxes(enemy);
+        for (var i = 0; i < weaponHitboxes.length; i++) {
+            var weaponHitbox = weaponHitboxes[i];
+            var weapon = enemy.bossCombat.weapons[weaponHitbox.index];
+            if (!weapon) {
+                continue;
+            }
+            var isLocked = !weapon.unlocked;
+
+            var maxLife = Math.max(1, weapon.maxLife || weapon.life || 1);
+            var lifeRatio = Math.max(0, Math.min(1, weapon.life / maxLife));
+            var barWidth = Math.max(20, Math.round(weaponHitbox.width + 4));
+            var barHeight = 6;
+            var barX = Math.round(weaponHitbox.left);
+            var barY = Math.round(weaponHitbox.top - 10);
+            var fillWidth = Math.round(barWidth * lifeRatio);
+            var fillColor = isLocked ? 'rgba(130, 130, 145, 0.7)' : (lifeRatio > 0.6 ? '#59ff8b' : (lifeRatio > 0.3 ? '#ffd447' : '#ff4d5a'));
+            var isCritical = !isLocked && lifeRatio > 0 && lifeRatio <= 0.3;
+            var pulse = isCritical ? ((Math.sin(nowTime / 110) + 1) / 2) : 0;
+            var criticalGlowAlpha = 0.3 + (pulse * 0.55);
+
+            bufferctx.save();
+            if (isCritical) {
+                bufferctx.shadowBlur = 8 + Math.round(pulse * 6);
+                bufferctx.shadowColor = 'rgba(255, 70, 90, ' + criticalGlowAlpha + ')';
+            }
+            bufferctx.fillStyle = 'rgba(12, 7, 16, 0.9)';
+            bufferctx.fillRect(barX, barY, barWidth, barHeight);
+            if (fillWidth > 0) {
+                bufferctx.fillStyle = fillColor;
+                bufferctx.fillRect(barX, barY, fillWidth, barHeight);
+            }
+            bufferctx.strokeStyle = isLocked ? 'rgba(185, 185, 205, 0.92)' : 'rgba(255, 238, 186, 0.95)';
+            bufferctx.lineWidth = 1.5;
+            bufferctx.strokeRect(barX + 0.5, barY + 0.5, barWidth - 1, barHeight - 1);
+            if (isLocked) {
+                bufferctx.strokeStyle = 'rgba(220, 220, 240, 0.75)';
+                bufferctx.lineWidth = 1;
+                bufferctx.beginPath();
+                bufferctx.moveTo(barX + 2, barY + 2);
+                bufferctx.lineTo(barX + barWidth - 2, barY + barHeight - 2);
+                bufferctx.moveTo(barX + barWidth - 2, barY + 2);
+                bufferctx.lineTo(barX + 2, barY + barHeight - 2);
+                bufferctx.stroke();
+            }
+            bufferctx.restore();
+        }
     }
 
     function drawPlayerImmunityEffect(playerEntity, drawPosY) {

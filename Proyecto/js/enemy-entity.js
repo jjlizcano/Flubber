@@ -865,6 +865,7 @@ window.FlubberEnemyEntity = (function () {
                         id: weaponDef.id || ('weapon-' + (i + 1)),
                         life: weaponLife,
                         maxLife: weaponLife,
+                        unlocked: i < 2,
                         destroyed: false,
                         offsetX: Math.round(spriteWidth * weaponDef.xRatio),
                         offsetY: Math.round(spriteHeight * weaponDef.yRatio),
@@ -885,6 +886,7 @@ window.FlubberEnemyEntity = (function () {
                     weapons: weapons,
                     activeWeaponIndex: 0,
                     entryY: Math.max(30, bossLevelOneConfig.entryY || 82),
+                    secondaryWaveUnlocked: false,
                     firstWeaponDestroyedTriggered: false,
                     secondWeaponDestroyedTriggered: false
                 };
