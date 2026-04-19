@@ -1614,7 +1614,19 @@ var game = (function () {
             outlineWidth: 2
         });
 
-        drawArcadeText('NIVEL ' + currentLevel + '  |  PUNTOS ' + player.score, centerX, centerY + 55, {
+        drawArcadeText('VOLUMEN ' + mainMenuVolume + '%', centerX, centerY + 48, {
+            color: '#ffe38a',
+            font: "bold 11px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 170, 0, 0.45)',
+            glowBlur: 3,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 1
+        });
+
+        drawMainMenuVolumeBar(centerX - 122, centerY + 58, 244, 8);
+
+        drawArcadeText('NIVEL ' + currentLevel + '  |  PUNTOS ' + player.score, centerX, centerY + 83, {
             color: '#ffe680',
             font: "bold 13px 'Courier New', monospace",
             align: 'center',
@@ -1720,6 +1732,10 @@ var game = (function () {
         bufferctx.lineWidth = 1;
         bufferctx.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
         bufferctx.restore();
+    }
+
+    function adjustMainMenuVolume(delta) {
+        mainMenuVolume = Math.max(0, Math.min(100, mainMenuVolume + delta));
     }
 
     function Player(life, score) {
@@ -2946,12 +2962,12 @@ var game = (function () {
 
         if (stageState === 'menu') {
             if (key === 37) {
-                mainMenuVolume = Math.max(0, mainMenuVolume - 5);
+                adjustMainMenuVolume(-5);
                 e.preventDefault();
                 return;
             }
             if (key === 39) {
-                mainMenuVolume = Math.min(100, mainMenuVolume + 5);
+                adjustMainMenuVolume(5);
                 e.preventDefault();
                 return;
             }
@@ -2986,6 +3002,16 @@ var game = (function () {
         }
 
         if (isPaused) {
+            if (key === 37) {
+                adjustMainMenuVolume(-5);
+                e.preventDefault();
+                return;
+            }
+            if (key === 39) {
+                adjustMainMenuVolume(5);
+                e.preventDefault();
+                return;
+            }
             e.preventDefault();
             return;
         }
