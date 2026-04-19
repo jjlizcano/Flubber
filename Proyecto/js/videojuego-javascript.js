@@ -186,6 +186,7 @@ var game = (function () {
         phase: 1,
         stageType: 'normal'
     };
+    var mainMenuVolume = 70;
     var isPaused = false;
     var pausedStageState = '';
     var pauseStartedAt = 0;
@@ -287,11 +288,27 @@ var game = (function () {
         resetGameState();
         loadDebugStartConfigFromUrl();
         applyDebugStartConfig();
+        startMainMenu();
+    }
+
+    function startMainMenu() {
+        stageState = 'menu';
+        stageMessage = '';
+        stageTransitionUntil = 0;
+        clearStageEntities();
+        clearKeyPressedState();
+    }
+
+    function startGameFromMainMenu() {
+        resetGameState();
+        loadDebugStartConfigFromUrl();
+        applyDebugStartConfig();
         player = new Player(playerLife, 0);
         applyDebugRewardsForTest();
         startCountdown('Nivel ' + currentLevel);
         showLifeAndScore();
     }
+
     function init() {
 
         preloadImages();
@@ -312,11 +329,7 @@ var game = (function () {
 
         loadDebugStartConfigFromUrl();
         applyDebugStartConfig();
-        player = new Player(playerLife, 0);
-        applyDebugRewardsForTest();
-        startCountdown('Nivel ' + currentLevel);
-
-        showLifeAndScore();
+        startMainMenu();
 
         addListener(document, 'keydown', keyDown);
         addListener(document, 'keyup', keyUp);
@@ -1612,6 +1625,103 @@ var game = (function () {
         });
     }
 
+    function drawMainMenu() {
+        var centerX = canvas.width / 2;
+        var centerY = canvas.height / 2;
+        var panelWidth = canvas.width - 84;
+        var panelHeight = 330;
+        var panelX = 42;
+        var panelY = centerY - 178;
+
+        bufferctx.save();
+        bufferctx.fillStyle = 'rgba(255, 170, 0, 0.07)';
+        bufferctx.beginPath();
+        bufferctx.arc(centerX - 185, centerY - 115, 110, 0, Math.PI * 2, false);
+        bufferctx.fill();
+        bufferctx.fillStyle = 'rgba(0, 255, 140, 0.06)';
+        bufferctx.beginPath();
+        bufferctx.arc(centerX + 170, centerY + 110, 125, 0, Math.PI * 2, false);
+        bufferctx.fill();
+        bufferctx.restore();
+
+        drawArcadePanel(panelX, panelY, panelWidth, panelHeight, 0.95, 'rgba(180, 100, 255, 0.95)');
+
+        drawArcadeText('FLUBBER', centerX, panelY + 42, {
+            color: '#fff3a3',
+            font: "bold 38px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 170, 0, 0.98)',
+            glowBlur: 14,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 4
+        });
+
+        drawArcadePanel(centerX - 182, panelY + 108, 364, 66, 0.88, 'rgba(0, 255, 140, 0.78)');
+        drawArcadeText('INICIAR JUEGO', centerX, panelY + 136, {
+            color: '#7dffb4',
+            font: "bold 22px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(0, 255, 140, 0.9)',
+            glowBlur: 8,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 3
+        });
+        drawArcadeText('ESPACIO / ENTER', centerX, panelY + 162, {
+            color: '#fff3a3',
+            font: "bold 11px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 170, 0, 0.75)',
+            glowBlur: 4,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
+
+        drawArcadePanel(centerX - 182, panelY + 196, 364, 72, 0.72, 'rgba(255, 175, 0, 0.55)');
+        drawArcadeText('VOLUMEN', centerX, panelY + 211, {
+            color: '#ffe38a',
+            font: "bold 13px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 170, 0, 0.45)',
+            glowBlur: 3,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 1
+        });
+
+        drawMainMenuVolumeBar(centerX - 122, panelY + 229, 244, 8);
+
+        drawArcadeText('← →', centerX, panelY + 251, {
+            color: '#fff1b8',
+            font: "bold 10px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 170, 0, 0.35)',
+            glowBlur: 2,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 1
+        });
+
+    }
+
+    function drawMainMenuVolumeBar(x, y, width, height) {
+        var fillWidth = Math.round(width * (Math.max(0, Math.min(100, mainMenuVolume)) / 100));
+        var knobX = x + fillWidth;
+
+        bufferctx.save();
+        bufferctx.fillStyle = 'rgba(18, 10, 28, 0.88)';
+        bufferctx.fillRect(x, y, width, height);
+        bufferctx.fillStyle = 'rgba(0, 255, 140, 0.88)';
+        if (fillWidth > 0) {
+            bufferctx.fillRect(x, y, fillWidth, height);
+        }
+        bufferctx.fillStyle = 'rgba(255, 245, 170, 0.95)';
+        bufferctx.beginPath();
+        bufferctx.arc(knobX, y + (height / 2), Math.max(5, Math.round(height * 0.95)), 0, Math.PI * 2, false);
+        bufferctx.fill();
+        bufferctx.strokeStyle = 'rgba(255, 210, 120, 0.95)';
+        bufferctx.lineWidth = 1;
+        bufferctx.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
+        bufferctx.restore();
+    }
+
     function Player(life, score) {
         var settings = {
             marginBottom : 40,
@@ -2834,6 +2944,31 @@ var game = (function () {
     function keyDown(e) {
         var key = (window.event ? e.keyCode : e.which);
 
+        if (stageState === 'menu') {
+            if (key === 37) {
+                mainMenuVolume = Math.max(0, mainMenuVolume - 5);
+                e.preventDefault();
+                return;
+            }
+            if (key === 39) {
+                mainMenuVolume = Math.min(100, mainMenuVolume + 5);
+                e.preventDefault();
+                return;
+            }
+            if (key === 13 || key === 32) {
+                startGameFromMainMenu();
+                e.preventDefault();
+                return;
+            }
+            if (key === 82) {
+                restartGame();
+                e.preventDefault();
+                return;
+            }
+            e.preventDefault();
+            return;
+        }
+
         if (key === 82) { // R - Reiniciar siempre
             restartGame();
             e.preventDefault();
@@ -3105,6 +3240,11 @@ var game = (function () {
 
         drawBackground();
 
+        if (stageState === 'menu') {
+            drawMainMenu();
+            return;
+        }
+
         if (isPaused) {
             drawPauseOverlay();
             showLifeAndScore();
@@ -3297,7 +3437,7 @@ var game = (function () {
     }
 
     function drawBackground() {
-        var background = currentStageType === 'boss' ? bgBoss : bgMain;
+        var background = stageState === 'menu' ? bgMain : (currentStageType === 'boss' ? bgBoss : bgMain);
         bufferctx.drawImage(background, 0, 0);
     }
 
