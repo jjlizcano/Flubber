@@ -141,6 +141,13 @@ window.FlubberEnemyEntity = (function () {
                     enemy.customAnimationFrameIndex = 0;
                     enemy.image = type2IdleFrame;
                 }
+            } else if (enemy.fixedSpriteIndex === 2 && enemyImages.type3Idle && enemyImages.type3Idle.length) {
+                var type3IdleFrame = enemyImages.type3Idle[0];
+                if (type3IdleFrame && type3IdleFrame.width && type3IdleFrame.height) {
+                    enemy.customAnimationFrames = enemyImages.type3Idle;
+                    enemy.customAnimationFrameIndex = 0;
+                    enemy.image = type3IdleFrame;
+                }
             }
             enemy.spriteWidth = getImageDimension(enemy.image, 40);
             enemy.spriteHeight = getImageDimension(enemy.image, 40);
@@ -185,14 +192,33 @@ window.FlubberEnemyEntity = (function () {
             }
 
             function updateHunterMovement(movementSpeed, speedMultiplier) {
+                function setHunterAnimationFrames() {
+                    var targetFrames = enemyImages.type3Idle;
+                    if (enemy.hunterState === 'charge') {
+                        targetFrames = enemyImages.type3Charge && enemyImages.type3Charge.length ? enemyImages.type3Charge : targetFrames;
+                    } else if (enemy.hunterState === 'dash') {
+                        targetFrames = enemyImages.type3Dash && enemyImages.type3Dash.length ? enemyImages.type3Dash : targetFrames;
+                    }
+
+                    if (targetFrames && targetFrames.length && enemy.customAnimationFrames !== targetFrames) {
+                        enemy.customAnimationFrames = targetFrames;
+                        enemy.customAnimationFrameIndex = 0;
+                        if (targetFrames[0] && targetFrames[0].width && targetFrames[0].height) {
+                            enemy.image = targetFrames[0];
+                        }
+                    }
+                }
+
                 var nowTime = new Date().getTime();
                 var appliedMultiplier = typeof speedMultiplier === 'number' ? speedMultiplier : 1;
+                setHunterAnimationFrames();
 
                 var lowerThirdStartY = canvasHeight * (2 / 3);
                 var canForceDescent = enemy.hunterDashesCompleted >= (enemy.hunterMinDashesBeforeDescent || 0);
                 if (!enemy.hunterForcedDescent && enemy.posY >= lowerThirdStartY && canForceDescent) {
                     enemy.hunterForcedDescent = true;
                     enemy.hunterState = 'descent';
+                    setHunterAnimationFrames();
                     enemy.hunterNextVolleyAt = nowTime;
                 }
 
@@ -210,6 +236,7 @@ window.FlubberEnemyEntity = (function () {
                     if (enemy.posY >= enemy.hunterEntryTargetY) {
                         enemy.posY = enemy.hunterEntryTargetY;
                         enemy.hunterState = 'charge';
+                        setHunterAnimationFrames();
                         enemy.hunterChargeCenterX = enemy.posX;
                         enemy.hunterChargePhase = 0;
                         enemy.hunterChargeUntil = nowTime + 700;
@@ -241,6 +268,7 @@ window.FlubberEnemyEntity = (function () {
                             enemy.hunterDashTargetY = -enemy.spriteHeight;
                         }
                         enemy.hunterState = 'dash';
+                        setHunterAnimationFrames();
                     }
                     return;
                 }
@@ -255,6 +283,7 @@ window.FlubberEnemyEntity = (function () {
                     if (reachedTarget) {
                         enemy.hunterDashesCompleted = (enemy.hunterDashesCompleted || 0) + 1;
                         enemy.hunterState = 'return';
+                        setHunterAnimationFrames();
                     }
                     return;
                 }
@@ -268,6 +297,7 @@ window.FlubberEnemyEntity = (function () {
                     );
                     if (returnedToOrigin) {
                         enemy.hunterState = 'zigzag';
+                        setHunterAnimationFrames();
                         enemy.hunterZigzagUntil = nowTime + 1400;
                         enemy.hunterBurstShotsRemaining = 2;
                         enemy.hunterNextBurstAt = nowTime + 120;
@@ -301,6 +331,7 @@ window.FlubberEnemyEntity = (function () {
 
                     if (nowTime >= enemy.hunterZigzagUntil) {
                         enemy.hunterState = 'charge';
+                        setHunterAnimationFrames();
                         enemy.hunterChargeCenterX = enemy.posX;
                         enemy.hunterChargePhase = 0;
                         enemy.hunterChargeUntil = nowTime + 700;
@@ -833,6 +864,11 @@ window.FlubberEnemyEntity = (function () {
                 enemy.stopShooting();
                 enemy.hunterMotion = true;
                 enemy.hunterState = 'enter';
+                if (evilImages.type3Idle && evilImages.type3Idle.length) {
+                    enemy.customAnimationFrames = evilImages.type3Idle;
+                    enemy.customAnimationFrameIndex = 0;
+                    enemy.image = evilImages.type3Idle[0];
+                }
                 enemy.hunterEntryTargetY = 70 + getRandomNumber(110);
                 enemy.hunterChargeAmplitude = 20 + getRandomNumber(18);
                 enemy.hunterDashSpeed = Math.max(4.2, enemy.goDownSpeed * 3.8);

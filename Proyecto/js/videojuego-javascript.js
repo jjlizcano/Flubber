@@ -88,6 +88,9 @@ var game = (function () {
             type1Death: [],
             type2Idle: [],
             type2Death: [],
+            type3Idle: [],
+            type3Charge: [],
+            type3Dash: [],
             killed : new Image()
         },
         bossImages = {
@@ -280,6 +283,20 @@ var game = (function () {
         return '0' + number;
     }
 
+    function isDrawableImage(image) {
+        if (!image) {
+            return false;
+        }
+
+        if (typeof image.complete === 'boolean' && !image.complete) {
+            return false;
+        }
+
+        var width = typeof image.naturalWidth === 'number' ? image.naturalWidth : image.width;
+        var height = typeof image.naturalHeight === 'number' ? image.naturalHeight : image.height;
+        return !!(width && height);
+    }
+
     function preloadImages () {
         for (var frameIndex = 0; frameIndex < playerAnimations.frameCount; frameIndex++) {
             var frameName = 'frame_' + padFrameNumber(frameIndex) + '.png';
@@ -299,6 +316,18 @@ var game = (function () {
             var maloIdleFrame = new Image();
             maloIdleFrame.src = 'images/maloidle/' + frameName;
             evilImages.type1Idle[frameIndex] = maloIdleFrame;
+
+            var malo3IdleFrame = new Image();
+            malo3IdleFrame.src = 'images/malo3idle/' + frameName;
+            evilImages.type3Idle[frameIndex] = malo3IdleFrame;
+
+            var malo3ChargeFrame = new Image();
+            malo3ChargeFrame.src = 'images/malo3charge/' + frameName;
+            evilImages.type3Charge[frameIndex] = malo3ChargeFrame;
+
+            var malo3DashFrame = new Image();
+            malo3DashFrame.src = 'images/malo3dash/' + frameName;
+            evilImages.type3Dash[frameIndex] = malo3DashFrame;
         }
 
         for (var deathFrameIndex = 0; deathFrameIndex < 15; deathFrameIndex++) {
@@ -332,6 +361,9 @@ var game = (function () {
         }
         if (evilImages.type2Idle.length) {
             evilImages.animation[1] = evilImages.type2Idle[0];
+        }
+        if (evilImages.type3Idle.length) {
+            evilImages.animation[2] = evilImages.type3Idle[0];
         }
         evilImages.killed.src = 'images/malo_muerto.png';
         bossImages.killed.src = 'images/jefe_muerto.png';
@@ -2436,6 +2468,9 @@ var game = (function () {
         } else if (this.fixedSpriteIndex === 1 && enemyImages.type2Idle && enemyImages.type2Idle.length) {
             this.customAnimationFrames = enemyImages.type2Idle;
             this.image = this.customAnimationFrames[0];
+        } else if (this.fixedSpriteIndex === 2 && enemyImages.type3Idle && enemyImages.type3Idle.length) {
+            this.customAnimationFrames = enemyImages.type3Idle;
+            this.image = this.customAnimationFrames[0];
         }
         this.animation = 0;
         this.spriteWidth = this.image.width || 40;
@@ -2615,12 +2650,31 @@ var game = (function () {
         }
 
         function updateHunterMovement(enemy, movementSpeed) {
+            function setHunterAnimationFrames() {
+                var targetFrames = enemyImages.type3Idle;
+                if (enemy.hunterState === 'charge') {
+                    targetFrames = enemyImages.type3Charge && enemyImages.type3Charge.length ? enemyImages.type3Charge : targetFrames;
+                } else if (enemy.hunterState === 'dash') {
+                    targetFrames = enemyImages.type3Dash && enemyImages.type3Dash.length ? enemyImages.type3Dash : targetFrames;
+                }
+
+                if (targetFrames && targetFrames.length && enemy.customAnimationFrames !== targetFrames) {
+                    enemy.customAnimationFrames = targetFrames;
+                    enemy.customAnimationFrameIndex = 0;
+                    if (targetFrames[0]) {
+                        enemy.image = targetFrames[0];
+                    }
+                }
+            }
+
             var nowTime = new Date().getTime();
+            setHunterAnimationFrames();
             if (enemy.hunterState === 'enter') {
                 enemy.posY += Math.max(0.9, movementSpeed);
                 if (enemy.posY >= enemy.hunterEntryTargetY) {
                     enemy.posY = enemy.hunterEntryTargetY;
                     enemy.hunterState = 'charge';
+                    setHunterAnimationFrames();
                     enemy.hunterChargeCenterX = enemy.posX;
                     enemy.hunterChargePhase = 0;
                     enemy.hunterChargeUntil = nowTime + 700;
@@ -2651,6 +2705,7 @@ var game = (function () {
                         enemy.hunterDashTargetY = -enemy.spriteHeight;
                     }
                     enemy.hunterState = 'dash';
+                    setHunterAnimationFrames();
                 }
                 return;
             }
@@ -2660,6 +2715,7 @@ var game = (function () {
                     Math.max(4.2, enemy.hunterDashSpeed));
                 if (reachedTarget) {
                     enemy.hunterState = 'return';
+                    setHunterAnimationFrames();
                 }
                 return;
             }
@@ -2669,6 +2725,7 @@ var game = (function () {
                     Math.max(2.6, enemy.hunterReturnSpeed));
                 if (returnedToOrigin) {
                     enemy.hunterState = 'zigzag';
+                    setHunterAnimationFrames();
                     enemy.hunterZigzagUntil = nowTime + 1400;
                     enemy.hunterBurstShotsRemaining = 2;
                     enemy.hunterNextBurstAt = nowTime + 120;
@@ -2699,6 +2756,7 @@ var game = (function () {
 
                 if (nowTime >= enemy.hunterZigzagUntil) {
                     enemy.hunterState = 'charge';
+                    setHunterAnimationFrames();
                     enemy.hunterChargeCenterX = enemy.posX;
                     enemy.hunterChargePhase = 0;
                     enemy.hunterChargeUntil = nowTime + 700;
@@ -2899,15 +2957,24 @@ var game = (function () {
                 this.animation = 0;
                 if (this.customAnimationFrames && this.customAnimationFrames.length) {
                     this.customAnimationFrameIndex = (this.customAnimationFrameIndex + 1) % this.customAnimationFrames.length;
-                    this.image = this.customAnimationFrames[this.customAnimationFrameIndex];
+                    var customFrame = this.customAnimationFrames[this.customAnimationFrameIndex];
+                    if (isDrawableImage(customFrame)) {
+                        this.image = customFrame;
+                    }
                 } else if (this.fixedSpriteIndex === null) {
                     this.imageNumber ++;
                     if (this.imageNumber > 8) {
                         this.imageNumber = 1;
                     }
-                    this.image = enemyImages.animation[this.imageNumber - 1];
+                    var frameImage = enemyImages.animation[this.imageNumber - 1];
+                    if (isDrawableImage(frameImage)) {
+                        this.image = frameImage;
+                    }
                 } else {
-                    this.image = enemyImages.animation[this.fixedSpriteIndex];
+                    var fixedImage = enemyImages.animation[this.fixedSpriteIndex];
+                    if (isDrawableImage(fixedImage)) {
+                        this.image = fixedImage;
+                    }
                 }
             }
         };
@@ -3010,6 +3077,11 @@ var game = (function () {
             this.stopShooting();
             this.hunterMotion = true;
             this.hunterState = 'enter';
+            if (evilImages.type3Idle && evilImages.type3Idle.length) {
+                this.customAnimationFrames = evilImages.type3Idle;
+                this.customAnimationFrameIndex = 0;
+                this.image = evilImages.type3Idle[0];
+            }
             this.hunterEntryTargetY = 70 + getRandomNumber(110);
             this.hunterChargeAmplitude = 20 + getRandomNumber(18);
             this.hunterDashSpeed = Math.max(4.2, this.goDownSpeed * 3.8);
@@ -3962,6 +4034,7 @@ var game = (function () {
         for (var e = 0; e < activeEnemies.length; e++) {
             var enemy = activeEnemies[e];
             if (enemy && !enemy.shouldDisappear) {
+                var enemyImage = isDrawableImage(enemy.image) ? enemy.image : null;
                 var enemyAlpha = typeof enemy.deathFadeAlpha === 'number' ? enemy.deathFadeAlpha : 1;
                 var enemyAngle = 0;
                 if (enemy.enemyType === 1) {
@@ -3989,16 +4062,18 @@ var game = (function () {
                         bufferctx.globalAlpha = enemyAlpha;
                     }
                 }
-                if (enemyAngle !== 0) {
-                    var enemyWidth = enemy.image && enemy.image.width ? enemy.image.width : (enemy.spriteWidth || 40);
-                    var enemyHeight = enemy.image && enemy.image.height ? enemy.image.height : (enemy.spriteHeight || 40);
-                    var enemyCenterX = Math.round(enemy.posX) + (enemyWidth / 2);
-                    var enemyCenterY = Math.round(enemy.posY) + (enemyHeight / 2);
-                    bufferctx.translate(enemyCenterX, enemyCenterY);
-                    bufferctx.rotate(enemyAngle * Math.PI / 180);
-                    bufferctx.drawImage(enemy.image, -(enemyWidth / 2), -(enemyHeight / 2));
-                } else {
-                    bufferctx.drawImage(enemy.image, Math.round(enemy.posX), Math.round(enemy.posY));
+                if (enemyImage) {
+                    if (enemyAngle !== 0) {
+                        var enemyWidth = enemyImage.width || (enemy.spriteWidth || 40);
+                        var enemyHeight = enemyImage.height || (enemy.spriteHeight || 40);
+                        var enemyCenterX = Math.round(enemy.posX) + (enemyWidth / 2);
+                        var enemyCenterY = Math.round(enemy.posY) + (enemyHeight / 2);
+                        bufferctx.translate(enemyCenterX, enemyCenterY);
+                        bufferctx.rotate(enemyAngle * Math.PI / 180);
+                        bufferctx.drawImage(enemyImage, -(enemyWidth / 2), -(enemyHeight / 2));
+                    } else {
+                        bufferctx.drawImage(enemyImage, Math.round(enemy.posX), Math.round(enemy.posY));
+                    }
                 }
                 if (enemyAlpha < 1 || enemyAngle !== 0) {
                     bufferctx.restore();
