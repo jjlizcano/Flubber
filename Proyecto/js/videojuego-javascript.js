@@ -2001,6 +2001,8 @@ var game = (function () {
         this.deathFadeStep = 0.06;
         this.deathFadeDelayCounter = 8;
         this.shouldDisappear = false;
+        this.renderAngle = 0;
+        this.deathRenderAngle = 0;
         if (this.fixedSpriteIndex === 0 && enemyImages.type1Idle && enemyImages.type1Idle.length) {
             this.customAnimationFrames = enemyImages.type1Idle;
             this.image = this.customAnimationFrames[0];
@@ -2081,6 +2083,17 @@ var game = (function () {
                 return;
             }
             this.stopShooting();
+            if (this.enemyType === 1) {
+                if (this.zigzagMotion && typeof this.zigzagDirection === 'number') {
+                    this.deathRenderAngle = this.zigzagDirection > 0 ? -15 : 15;
+                } else if (this.direction === 'D') {
+                    this.deathRenderAngle = -15;
+                } else if (this.direction === 'I') {
+                    this.deathRenderAngle = 15;
+                } else {
+                    this.deathRenderAngle = typeof this.renderAngle === 'number' ? this.renderAngle : 0;
+                }
+            }
             this.dead = true;
             if (this.fixedSpriteIndex === 0 && enemyImages.type1Death && enemyImages.type1Death.length) {
                 this.customAnimationFrames = null;
@@ -2394,13 +2407,16 @@ var game = (function () {
                 var verticalSpeed = this.zigzagVerticalSpeed || Math.max(0.75, movementSpeed * 0.9);
                 this.posY += verticalSpeed;
                 this.posX += (horizontalSpeed * this.zigzagDirection);
+                this.renderAngle = this.zigzagDirection > 0 ? 45 : -45;
 
                 if (this.posX <= 0) {
                     this.posX = 0;
                     this.zigzagDirection = 1;
+                    this.renderAngle = 45;
                 } else if (this.posX >= (canvas.width - this.spriteWidth)) {
                     this.posX = canvas.width - this.spriteWidth;
                     this.zigzagDirection = -1;
+                    this.renderAngle = -45;
                 }
             } else if (this.circularMotion) {
                 var orbitSpeed = this.circularOrbitSpeed || Math.max(0.03, movementSpeed * 0.04);
@@ -2419,12 +2435,18 @@ var game = (function () {
                 this.posY += movementSpeed;
                 if (this.direction === 'D') {
                     this.posX += movementSpeed;
+                        if (this.enemyType === 1) {
+                            this.renderAngle = 45;
+                        }
                     if (this.posX >= this.maxX) {
                         this.posX = this.maxX;
                         this.direction = 'I';
                     }
                 } else {
                     this.posX -= movementSpeed;
+                        if (this.enemyType === 1) {
+                            this.renderAngle = -45;
+                        }
                     if (this.posX <= this.minX) {
                         this.posX = this.minX;
                         this.direction = 'D';
@@ -3410,12 +3432,44 @@ var game = (function () {
             var enemy = activeEnemies[e];
             if (enemy && !enemy.shouldDisappear) {
                 var enemyAlpha = typeof enemy.deathFadeAlpha === 'number' ? enemy.deathFadeAlpha : 1;
-                if (enemyAlpha < 1) {
-                    bufferctx.save();
-                    bufferctx.globalAlpha = enemyAlpha;
+                var enemyAngle = 0;
+                if (enemy.enemyType === 1) {
+                    if (enemy.dead) {
+                        if (typeof enemy.deathRenderAngle === 'number') {
+                            enemyAngle = enemy.deathRenderAngle;
+                        } else if (typeof enemy.renderAngle === 'number') {
+                            enemyAngle = enemy.renderAngle;
+                        }
+                    } else {
+                        if (enemy.zigzagMotion && typeof enemy.zigzagDirection === 'number') {
+                            enemyAngle = enemy.zigzagDirection > 0 ? -15 : 15;
+                        } else if (enemy.direction === 'D') {
+                            enemyAngle = -15;
+                        } else if (enemy.direction === 'I') {
+                            enemyAngle = 15;
+                        } else if (typeof enemy.renderAngle === 'number') {
+                            enemyAngle = enemy.renderAngle;
+                        }
+                    }
                 }
-                bufferctx.drawImage(enemy.image, Math.round(enemy.posX), Math.round(enemy.posY));
-                if (enemyAlpha < 1) {
+                if (enemyAlpha < 1 || enemyAngle !== 0) {
+                    bufferctx.save();
+                    if (enemyAlpha < 1) {
+                        bufferctx.globalAlpha = enemyAlpha;
+                    }
+                }
+                if (enemyAngle !== 0) {
+                    var enemyWidth = enemy.image && enemy.image.width ? enemy.image.width : (enemy.spriteWidth || 40);
+                    var enemyHeight = enemy.image && enemy.image.height ? enemy.image.height : (enemy.spriteHeight || 40);
+                    var enemyCenterX = Math.round(enemy.posX) + (enemyWidth / 2);
+                    var enemyCenterY = Math.round(enemy.posY) + (enemyHeight / 2);
+                    bufferctx.translate(enemyCenterX, enemyCenterY);
+                    bufferctx.rotate(enemyAngle * Math.PI / 180);
+                    bufferctx.drawImage(enemy.image, -(enemyWidth / 2), -(enemyHeight / 2));
+                } else {
+                    bufferctx.drawImage(enemy.image, Math.round(enemy.posX), Math.round(enemy.posY));
+                }
+                if (enemyAlpha < 1 || enemyAngle !== 0) {
                     bufferctx.restore();
                 }
                 if (!enemy.dead) {

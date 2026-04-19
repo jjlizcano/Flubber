@@ -51,6 +51,8 @@ window.FlubberEnemyEntity = (function () {
                 deathFadeStep: 0.06,
                 deathFadeDelayCounter: 8,
                 shouldDisappear: false,
+                renderAngle: 0,
+                deathRenderAngle: 0,
                 posY: -50,
                 life: life,
                 speed: options.getDefaultEnemySpeed(),
@@ -263,13 +265,16 @@ window.FlubberEnemyEntity = (function () {
                     var verticalSpeed = (enemy.zigzagVerticalSpeed || Math.max(0.55, movementSpeed * 0.7)) * appliedMultiplier;
                     enemy.posY += verticalSpeed;
                     enemy.posX += (horizontalSpeed * enemy.zigzagDirection);
+                    enemy.renderAngle = enemy.zigzagDirection > 0 ? -15 : 15;
 
                     if (enemy.posX <= 0) {
                         enemy.posX = 0;
                         enemy.zigzagDirection = 1;
+                        enemy.renderAngle = -15;
                     } else if (enemy.posX >= (canvasWidth - enemy.spriteWidth)) {
                         enemy.posX = canvasWidth - enemy.spriteWidth;
                         enemy.zigzagDirection = -1;
+                        enemy.renderAngle = 15;
                     }
 
                     if (enemy.hunterBurstShotsRemaining > 0 && nowTime >= enemy.hunterNextBurstAt) {
@@ -547,6 +552,17 @@ window.FlubberEnemyEntity = (function () {
                     return;
                 }
                 enemy.stopShooting();
+                if (enemy.enemyType === 1) {
+                    if (enemy.zigzagMotion && typeof enemy.zigzagDirection === 'number') {
+                        enemy.deathRenderAngle = enemy.zigzagDirection > 0 ? -15 : 15;
+                    } else if (enemy.direction === 'D') {
+                        enemy.deathRenderAngle = -15;
+                    } else if (enemy.direction === 'I') {
+                        enemy.deathRenderAngle = 15;
+                    } else {
+                        enemy.deathRenderAngle = typeof enemy.renderAngle === 'number' ? enemy.renderAngle : 0;
+                    }
+                }
                 enemy.dead = true;
                 if (enemy.fixedSpriteIndex === 0 && enemyImages.type1Death && enemyImages.type1Death.length) {
                     enemy.customAnimationFrames = null;
@@ -688,12 +704,18 @@ window.FlubberEnemyEntity = (function () {
                     enemy.posY += movementSpeed;
                     if (enemy.direction === 'D') {
                         enemy.posX += movementSpeed;
+                        if (enemy.enemyType === 1) {
+                            enemy.renderAngle = -15;
+                        }
                         if (enemy.posX >= enemy.maxX) {
                             enemy.posX = enemy.maxX;
                             enemy.direction = 'I';
                         }
                     } else {
                         enemy.posX -= movementSpeed;
+                        if (enemy.enemyType === 1) {
+                            enemy.renderAngle = 15;
+                        }
                         if (enemy.posX <= enemy.minX) {
                             enemy.posX = enemy.minX;
                             enemy.direction = 'D';
