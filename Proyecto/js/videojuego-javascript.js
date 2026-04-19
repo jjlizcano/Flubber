@@ -86,6 +86,8 @@ var game = (function () {
             animation : [],
             type1Idle: [],
             type1Death: [],
+            type2Idle: [],
+            type2Death: [],
             killed : new Image()
         },
         bossImages = {
@@ -216,10 +218,59 @@ var game = (function () {
     var isPaused = false;
     var pausedStageState = '';
     var pauseStartedAt = 0;
+    var gameMusic = null;
+    var gameMusicBaseVolume = 0.55;
+    var gameMusicTransitionVolume = 0.32;
+    var gameMusicDuckForTransition = false;
 
     function loop() {
         update();
         draw();
+    }
+
+    function getGameMusicVolume() {
+        return Math.max(0, Math.min(100, mainMenuVolume)) / 100;
+    }
+
+    function updateGameMusicVolume() {
+        if (!gameMusic) {
+            return;
+        }
+
+        var baseVolume = gameMusicDuckForTransition ? gameMusicTransitionVolume : gameMusicBaseVolume;
+        gameMusic.volume = baseVolume * getGameMusicVolume();
+    }
+
+    function ensureGameMusic() {
+        if (!gameMusic) {
+            gameMusic = new Audio('music/Starthropod.mp3');
+            gameMusic.loop = true;
+            gameMusic.preload = 'auto';
+        }
+
+        updateGameMusicVolume();
+        return gameMusic;
+    }
+
+    function setGameMusicDuckForTransition(shouldDuck) {
+        gameMusicDuckForTransition = !!shouldDuck;
+        updateGameMusicVolume();
+    }
+
+    function playGameMusic() {
+        var music = ensureGameMusic();
+        updateGameMusicVolume();
+
+        var playPromise = music.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(function () {});
+        }
+    }
+
+    function pauseGameMusic() {
+        if (gameMusic && !gameMusic.paused) {
+            gameMusic.pause();
+        }
     }
 
     function padFrameNumber(number) {
@@ -255,6 +306,17 @@ var game = (function () {
             var maloDeathFrame = new Image();
             maloDeathFrame.src = 'images/malodeath/' + deathFrameName;
             evilImages.type1Death[deathFrameIndex] = maloDeathFrame;
+
+            var malo2DeathFrame = new Image();
+            malo2DeathFrame.src = 'images/malo2death/' + deathFrameName;
+            evilImages.type2Death[deathFrameIndex] = malo2DeathFrame;
+        }
+
+        for (var type2FrameIndex = 0; type2FrameIndex < playerAnimations.frameCount; type2FrameIndex++) {
+            var type2FrameName = 'frame_' + padFrameNumber(type2FrameIndex) + '.png';
+            var malo2IdleFrame = new Image();
+            malo2IdleFrame.src = 'images/malo2idle/' + type2FrameName;
+            evilImages.type2Idle[type2FrameIndex] = malo2IdleFrame;
         }
 
         for (var i = 1; i <= 8; i++) {
@@ -267,6 +329,9 @@ var game = (function () {
         }
         if (evilImages.type1Idle.length) {
             evilImages.animation[0] = evilImages.type1Idle[0];
+        }
+        if (evilImages.type2Idle.length) {
+            evilImages.animation[1] = evilImages.type2Idle[0];
         }
         evilImages.killed.src = 'images/malo_muerto.png';
         bossImages.killed.src = 'images/jefe_muerto.png';
@@ -341,6 +406,8 @@ var game = (function () {
         stageTransitionUntil = 0;
         clearStageEntities();
         clearKeyPressedState();
+        setGameMusicDuckForTransition(false);
+        playGameMusic();
     }
 
     function startGameFromMainMenu() {
@@ -1514,6 +1581,7 @@ var game = (function () {
         stageState = 'paused';
         clearKeyPressedState();
         stopActiveEnemyShooting();
+        pauseGameMusic();
     }
 
     function resumeGame() {
@@ -1532,6 +1600,8 @@ var game = (function () {
         if (stageState === 'playing') {
             restartActiveEnemyShooting();
         }
+
+        playGameMusic();
     }
 
     function restartGameFromPause() {
@@ -1566,6 +1636,8 @@ var game = (function () {
 
         applyDebugStartConfig();
         player = new Player(playerLife, 0);
+        setGameMusicDuckForTransition(false);
+        playGameMusic();
         startCountdown('Nivel ' + currentLevel);
     }
 
@@ -1736,6 +1808,8 @@ var game = (function () {
         stageState = 'summary';
         stageMessage = message;
         stageTransitionUntil = new Date().getTime() + stageSummaryDuration;
+        setGameMusicDuckForTransition(gameMusicDuckForTransition);
+        playGameMusic();
         clearStageEntities();
     }
 
@@ -1743,6 +1817,8 @@ var game = (function () {
         stageState = 'countdown';
         stageMessage = message;
         stageTransitionUntil = new Date().getTime() + stageCountdownDuration;
+        setGameMusicDuckForTransition(gameMusicDuckForTransition);
+        playGameMusic();
         clearStageEntities();
     }
 
@@ -1750,6 +1826,8 @@ var game = (function () {
         activeStageConfig = getCurrentStageConfig();
         stageState = 'playing';
         stageMessage = '';
+        setGameMusicDuckForTransition(false);
+        playGameMusic();
         spawnStageEnemies(activeStageConfig);
     }
 
@@ -1873,12 +1951,14 @@ var game = (function () {
 
         if (currentLevel === totalLevels) {
             currentStageType = 'boss';
+            setGameMusicDuckForTransition(false);
             startSummary('Nivel ' + totalLevels + ' completado. Se acerca el jefe final');
             return;
         }
 
         currentLevel++;
         currentProgressLevel = currentLevel;
+        setGameMusicDuckForTransition(true);
         startSummary('Nivel completado. Preparando Nivel ' + currentLevel);
     }
 
@@ -2096,6 +2176,7 @@ var game = (function () {
 
     function adjustMainMenuVolume(delta) {
         mainMenuVolume = Math.max(0, Math.min(100, mainMenuVolume + delta));
+        updateGameMusicVolume();
     }
 
     function Player(life, score) {
@@ -2233,6 +2314,7 @@ var game = (function () {
         };
 
         player.killPlayer = function(damageTimestamp) {
+            pauseGameMusic();
             if (this.life > 1) {
                 var hitTime = typeof damageTimestamp === 'number' ? damageTimestamp : new Date().getTime();
                 var hitPosX = this.posX;
@@ -2249,6 +2331,7 @@ var game = (function () {
                     player.posY = Math.max(0, Math.min(hitPosY, canvas.height - player.height));
                     player.centerOnFirstFrame = false;
                     player.invulnerableUntil = hitTime + 2000;
+                    playGameMusic();
                 }, 500);
 
             } else {
@@ -2350,6 +2433,9 @@ var game = (function () {
         if (this.fixedSpriteIndex === 0 && enemyImages.type1Idle && enemyImages.type1Idle.length) {
             this.customAnimationFrames = enemyImages.type1Idle;
             this.image = this.customAnimationFrames[0];
+        } else if (this.fixedSpriteIndex === 1 && enemyImages.type2Idle && enemyImages.type2Idle.length) {
+            this.customAnimationFrames = enemyImages.type2Idle;
+            this.image = this.customAnimationFrames[0];
         }
         this.animation = 0;
         this.spriteWidth = this.image.width || 40;
@@ -2442,6 +2528,17 @@ var game = (function () {
             if (this.fixedSpriteIndex === 0 && enemyImages.type1Death && enemyImages.type1Death.length) {
                 this.customAnimationFrames = null;
                 this.deathAnimationFrames = enemyImages.type1Death;
+                this.deathAnimationFrameIndex = 0;
+                this.deathAnimationCompleted = false;
+                this.deathFadeAlpha = 1;
+                this.deathFadeDelayCounter = 8;
+                this.shouldDisappear = false;
+                this.image = this.deathAnimationFrames[0];
+                return;
+            }
+            if (this.fixedSpriteIndex === 1 && enemyImages.type2Death && enemyImages.type2Death.length) {
+                this.customAnimationFrames = null;
+                this.deathAnimationFrames = enemyImages.type2Death;
                 this.deathAnimationFrameIndex = 0;
                 this.deathAnimationCompleted = false;
                 this.deathFadeAlpha = 1;
