@@ -169,6 +169,21 @@ var game = (function () {
     var rewardSelectedIndex = 0;
     var rewardSelectionUnlockAt = 0;
     var rewardSelectionCooldownMs = gameConfig.rewardSelectionCooldownMs || 1800;
+    var rewardIconImages = {};
+    var rewardIconById = {
+        cadence: 'cadencia.png',
+        shield: 'escudo.png',
+        bigBullets: 'balas_grandes.png',
+        homing: 'balas_teledirigidas.png',
+        life: 'life.png',
+        fogueo: 'fogueo.png',
+        bounce: 'balas_con_rebote.png',
+        slow: 'balas_ralentizantes.png',
+        speed: 'velocidad.png',
+        points: 'multiplicador.png',
+        dodge: 'esquivo.png',
+        damage: 'da\u00f1o.png'
+    };
     var pendingRewardRewarded = false;
     var playerShotDamage = 1;
     var playerShotScale = 1;
@@ -742,9 +757,104 @@ var game = (function () {
             });
         }
 
+        drawActiveRewardsHud();
+
         if (currentStageType === 'boss') {
             drawBossOverallHealthBar();
             drawBossWeaponUnlockNotice();
+        }
+    }
+
+    function getActiveRewardHudItems() {
+        var entries = [
+            { id: 'cadence', label: 'CAD', value: runUpgrades.cadenceStacks },
+            { id: 'shield', label: 'SHD', value: runUpgrades.shieldStacks },
+            { id: 'bigBullets', label: 'BIG', value: runUpgrades.bigBulletStacks },
+            { id: 'homing', label: 'HOM', value: runUpgrades.homingStacks },
+            { id: 'fogueo', label: 'FOG', value: runUpgrades.fogueoTaken ? 1 : 0 },
+            { id: 'bounce', label: 'BNC', value: runUpgrades.bounceStacks },
+            { id: 'slow', label: 'SLW', value: runUpgrades.slowStacks },
+            { id: 'speed', label: 'SPD', value: runUpgrades.speedStacks },
+            { id: 'points', label: 'PTS', value: runUpgrades.pointsStacks },
+            { id: 'dodge', label: 'DOD', value: runUpgrades.dodgeTaken ? 1 : 0 },
+            { id: 'damage', label: 'DMG', value: runUpgrades.damageStacks }
+        ];
+        var active = [];
+        for (var i = 0; i < entries.length; i++) {
+            if (entries[i].value > 0) {
+                active.push(entries[i]);
+            }
+        }
+        return active;
+    }
+
+    function drawActiveRewardsHud() {
+        var items = getActiveRewardHudItems();
+        if (!items.length) {
+            return;
+        }
+
+        var iconSize = 32;
+        var gap = 8;
+        var chipWidth = 34;
+        var chipHeight = 28;
+        var startX = 14;
+        var startY = currentStageType === 'boss' ? 96 : 70;
+        var maxVerticalSpace = Math.max(1, canvas.height - startY - 16);
+        var rowsPerColumn = Math.max(1, Math.floor(maxVerticalSpace / (chipHeight + gap)));
+
+        drawArcadeText('PERKS', startX, startY - 8, {
+            color: '#ffdf8e',
+            font: "bold 9px 'Courier New', monospace",
+            align: 'left',
+            glowColor: 'rgba(255, 140, 25, 0.65)',
+            glowBlur: 4,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
+
+        for (var i = 0; i < items.length; i++) {
+            var column = Math.floor(i / rowsPerColumn);
+            var row = i % rowsPerColumn;
+            var x = startX + (column * (chipWidth + gap + 4));
+            var y = startY + (row * (chipHeight + gap));
+            var icon = getRewardIconImage(items[i].id);
+            var hasIcon = icon && icon.complete && icon.naturalWidth > 0;
+
+            if (hasIcon) {
+                var scale = Math.min(iconSize / icon.naturalWidth, iconSize / icon.naturalHeight);
+                var drawWidth = Math.max(10, Math.round(icon.naturalWidth * scale));
+                var drawHeight = Math.max(10, Math.round(icon.naturalHeight * scale));
+                var drawX = Math.round(x + ((chipWidth - drawWidth) / 2));
+                var drawY = Math.round(y + ((chipHeight - drawHeight) / 2));
+
+                bufferctx.save();
+                bufferctx.imageSmoothingEnabled = false;
+                bufferctx.drawImage(icon, drawX, drawY, drawWidth, drawHeight);
+                bufferctx.restore();
+            } else {
+                drawArcadeText(items[i].label, x + (chipWidth / 2), y + 13, {
+                    color: '#fff3b3',
+                    font: "bold 10px 'Courier New', monospace",
+                    align: 'center',
+                    glowColor: 'rgba(255, 150, 30, 0.6)',
+                    glowBlur: 3,
+                    outlineColor: arcadeTheme.outline,
+                    outlineWidth: 1
+                });
+            }
+
+            if (items[i].value > 1) {
+                drawArcadeText('x' + items[i].value, x + chipWidth - 2, y + chipHeight - 3, {
+                    color: '#7dffb4',
+                    font: "bold 9px 'Courier New', monospace",
+                    align: 'right',
+                    glowColor: 'rgba(0, 255, 140, 0.8)',
+                    glowBlur: 4,
+                    outlineColor: arcadeTheme.outline,
+                    outlineWidth: 1
+                });
+            }
         }
     }
 
@@ -1148,7 +1258,7 @@ var game = (function () {
         drawRewardCard(leftCardX, cardY, cardWidth, cardHeight, rewardChoices[0], rewardSelectedIndex === 0, 'IZQUIERDA');
         drawRewardCard(rightCardX, cardY, cardWidth, cardHeight, rewardChoices[1], rewardSelectedIndex === 1, 'DERECHA');
 
-        drawArcadeText('USA IZQUIERDA / DERECHA Y ESPACIO', centerX, centerY + 88, {
+        drawArcadeText('USA IZQUIERDA / DERECHA Y ESPACIO', centerX, centerY - 92, {
             color: '#ffcf63',
             font: "bold 12px 'Courier New', monospace",
             align: 'center',
@@ -1232,6 +1342,20 @@ var game = (function () {
         return lines;
     }
 
+    function getRewardIconImage(rewardId) {
+        if (!rewardId || !rewardIconById[rewardId]) {
+            return null;
+        }
+
+        if (!rewardIconImages[rewardId]) {
+            var icon = new Image();
+            icon.src = 'images/power_ups/' + rewardIconById[rewardId];
+            rewardIconImages[rewardId] = icon;
+        }
+
+        return rewardIconImages[rewardId];
+    }
+
     function drawRewardCard(x, y, width, height, reward, selected, sideLabel) {
         var borderColor = selected ? 'rgba(0, 255, 140, 0.95)' : 'rgba(255, 175, 0, 0.7)';
         drawArcadePanel(x, y, width, height, 0.8, borderColor);
@@ -1246,7 +1370,23 @@ var game = (function () {
         });
 
         if (reward) {
-           drawArcadeText(reward.name, x + (width / 2), y + 52, {
+            var icon = getRewardIconImage(reward.id);
+            var hasIcon = icon && icon.complete && icon.naturalWidth > 0;
+            if (hasIcon) {
+                var iconMaxSize = 34;
+                var iconScale = Math.min(iconMaxSize / icon.naturalWidth, iconMaxSize / icon.naturalHeight);
+                var iconWidth = Math.max(16, Math.round(icon.naturalWidth * iconScale));
+                var iconHeight = Math.max(16, Math.round(icon.naturalHeight * iconScale));
+                var iconX = Math.round(x + (width / 2) - (iconWidth / 2));
+                var iconY = y + 28;
+
+                bufferctx.save();
+                bufferctx.imageSmoothingEnabled = false;
+                bufferctx.drawImage(icon, iconX, iconY, iconWidth, iconHeight);
+                bufferctx.restore();
+            }
+
+            drawArcadeText(reward.name, x + (width / 2), y + (hasIcon ? 70 : 52), {
                 color: arcadeTheme.primaryText,
                 font: "bold 14px 'Courier New', monospace",
                 align: 'center',
@@ -1258,7 +1398,7 @@ var game = (function () {
             var descriptionFont = "bold 11px 'Courier New', monospace";
             var descriptionLines = getWrappedTextLines(reward.description, width - 18, descriptionFont, 2);
             for (var lineIndex = 0; lineIndex < descriptionLines.length; lineIndex++) {
-                drawArcadeText(descriptionLines[lineIndex], x + (width / 2), y + 78 + (lineIndex * 14), {
+                drawArcadeText(descriptionLines[lineIndex], x + (width / 2), y + (hasIcon ? 92 : 78) + (lineIndex * 14), {
                     color: '#fff3a3',
                     font: descriptionFont,
                     align: 'center',
@@ -3524,34 +3664,48 @@ var game = (function () {
         var centerX = canvas.width / 2;
         var centerY = canvas.height / 2;
         var finalScore = getFinalScore();
+        var panelWidth = canvas.width - 60;
+        var panelHeight = 300;
+        var panelX = (canvas.width - panelWidth) / 2;
+        var panelY = centerY - (panelHeight / 2);
 
-        drawArcadePanel(100, centerY - 110, canvas.width - 200, 220, 0.9, 'rgba(255, 70, 80, 0.85)');
-        drawArcadeText('GAME OVER', centerX, centerY - 12, {
+        drawArcadePanel(panelX, panelY, panelWidth, panelHeight, 0.95, 'rgba(255, 70, 80, 0.95)');
+        drawPanelShimmer(panelX, panelY, panelWidth, panelHeight, 'rgba(255, 120, 130, 0.34)', 0.85);
+        drawArcadeText('GAME OVER', centerX, panelY + 80, {
             color: arcadeTheme.dangerText,
-            font: arcadeTheme.titleFont,
+            font: "bold 52px 'Courier New', monospace",
             align: 'center',
             glowColor: 'rgba(255, 40, 70, 0.95)',
-            glowBlur: 12,
+            glowBlur: 16,
             outlineColor: arcadeTheme.outline,
-            outlineWidth: 4
+            outlineWidth: 6
         });
-        drawArcadeText('PUNTUACION FINAL ' + finalScore, centerX, centerY + 30, {
-            color: '#ffe680',
+        drawArcadeText('PUNTUACION FINAL', centerX, panelY + 138, {
+            color: '#ffd9a0',
             font: "bold 16px 'Courier New', monospace",
             align: 'center',
-            glowColor: 'rgba(255, 120, 0, 0.85)',
-            glowBlur: 6,
+            glowColor: 'rgba(255, 120, 0, 0.78)',
+            glowBlur: 7,
             outlineColor: arcadeTheme.outline,
             outlineWidth: 3
         });
-        drawArcadeText('PULSA R PARA REINTENTAR', centerX, centerY + 66, {
-            color: '#ffd9a0',
-            font: "bold 13px 'Courier New', monospace",
+        drawArcadeText(finalScore.toString(), centerX, panelY + 182, {
+            color: '#fff3a3',
+            font: "bold 38px 'Courier New', monospace",
             align: 'center',
-            glowColor: 'rgba(255, 90, 0, 0.75)',
-            glowBlur: 5,
+            glowColor: 'rgba(255, 170, 45, 0.95)',
+            glowBlur: 12,
             outlineColor: arcadeTheme.outline,
-            outlineWidth: 2
+            outlineWidth: 5
+        });
+        drawArcadeText('PULSA R PARA REINTENTAR', centerX, panelY + 242, {
+            color: '#ffd9a0',
+            font: "bold 16px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 90, 0, 0.85)',
+            glowBlur: 7,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 3
         });
     }
 
@@ -3561,44 +3715,75 @@ var game = (function () {
         var baseScore = player.score;
         var lifeBonus = player.life * 10;
         var totalScore = getTotalScore();
+        var panelWidth = canvas.width - 50;
+        var panelHeight = 330;
+        var panelX = (canvas.width - panelWidth) / 2;
+        var panelY = centerY - (panelHeight / 2);
         
-        drawArcadePanel(70, centerY - 130, canvas.width - 140, 260, 0.92, 'rgba(255, 208, 77, 0.9)');
-        drawArcadeText('VICTORIA TOTAL', centerX, centerY - 80, {
+        drawArcadePanel(panelX, panelY, panelWidth, panelHeight, 0.95, 'rgba(255, 208, 77, 0.95)');
+        drawPanelShimmer(panelX, panelY, panelWidth, panelHeight, 'rgba(255, 245, 175, 0.32)', 0.95);
+        drawArcadeText('VICTORY', centerX, panelY + 64, {
             color: arcadeTheme.successText,
-            font: arcadeTheme.titleFont,
+            font: "bold 46px 'Courier New', monospace",
             align: 'center',
             glowColor: 'rgba(255, 185, 40, 0.9)',
-            glowBlur: 10,
+            glowBlur: 16,
             outlineColor: arcadeTheme.outline,
-            outlineWidth: 4
+            outlineWidth: 6
         });
-        drawArcadeText('PUNTOS ' + baseScore, centerX, centerY - 25, {
+        drawArcadeText('PUNTOS ' + baseScore, centerX, panelY + 134, {
             color: '#ffe680',
-            font: "bold 16px 'Courier New', monospace",
+            font: "bold 20px 'Courier New', monospace",
             align: 'center',
             glowColor: arcadeTheme.glow,
-            glowBlur: 7,
-            outlineColor: arcadeTheme.outline,
-            outlineWidth: 3
-        });
-        drawArcadeText('BONO VIDAS ' + player.life + ' x 10 = ' + lifeBonus, centerX, centerY + 10, {
-            color: '#ffcf63',
-            font: "bold 16px 'Courier New', monospace",
-            align: 'center',
-            glowColor: 'rgba(255, 120, 0, 0.8)',
-            glowBlur: 6,
-            outlineColor: arcadeTheme.outline,
-            outlineWidth: 3
-        });
-        drawArcadeText('TOTAL ' + totalScore, centerX, centerY + 55, {
-            color: '#fff3a3',
-            font: "bold 21px 'Courier New', monospace",
-            align: 'center',
-            glowColor: 'rgba(255, 165, 0, 0.95)',
-            glowBlur: 11,
+            glowBlur: 9,
             outlineColor: arcadeTheme.outline,
             outlineWidth: 4
         });
+        drawArcadeText('BONO VIDAS ' + player.life + ' x 10 = ' + lifeBonus, centerX, panelY + 178, {
+            color: '#ffcf63',
+            font: "bold 20px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 120, 0, 0.8)',
+            glowBlur: 9,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 4
+        });
+        drawArcadeText('TOTAL ' + totalScore, centerX, panelY + 248, {
+            color: '#fff3a3',
+            font: "bold 34px 'Courier New', monospace",
+            align: 'center',
+            glowColor: 'rgba(255, 165, 0, 0.95)',
+            glowBlur: 14,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 5
+        });
+    }
+
+    function drawPanelShimmer(x, y, width, height, tintColor, speedFactor) {
+        var nowTime = new Date().getTime();
+        var pulse = (Math.sin(nowTime / (90 * (speedFactor || 1))) + 1) / 2;
+        var sweep = ((nowTime / (4.5 * (speedFactor || 1))) % (width + 120)) - 120;
+
+        bufferctx.save();
+        bufferctx.beginPath();
+        bufferctx.rect(x, y, width, height);
+        bufferctx.clip();
+
+        bufferctx.fillStyle = tintColor;
+        bufferctx.globalAlpha = 0.28 + (pulse * 0.26);
+        bufferctx.fillRect(x, y, width, height);
+
+        var shineGradient = bufferctx.createLinearGradient(x + sweep, y, x + sweep + 90, y + height);
+        shineGradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
+        shineGradient.addColorStop(0.5, 'rgba(255, 255, 230, 0.42)');
+        shineGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+        bufferctx.globalCompositeOperation = 'lighter';
+        bufferctx.globalAlpha = 0.42 + (pulse * 0.22);
+        bufferctx.fillStyle = shineGradient;
+        bufferctx.fillRect(x + sweep, y, 90, height);
+        bufferctx.restore();
     }
 
     function getTotalScore() {
