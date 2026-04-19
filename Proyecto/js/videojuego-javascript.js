@@ -183,6 +183,12 @@ var game = (function () {
     var playerNameInputConfirmed = false;
     var playerNamePendingSave = false;
     var playerNameStorageKey = 'flubber_player_name';
+    var comboStreak = 0;
+    var comboKillProgress = 0;
+    var comboMaxMultiplier = 5;
+    var comboKillsPerStep = gameConfig.comboKillsPerStep || [2, 2, 3, 3];
+    var comboMaxFlashUntil = 0;
+    var comboMaxFlashDuration = gameConfig.comboMaxFlashDurationMs || 850;
     var legacyScoreDatePattern = /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}$/;
     var debugRewardsForTest = [];
     var debugStartConfig = {
@@ -293,6 +299,9 @@ var game = (function () {
         playerNameInputConfirmed = false;
         playerNameInputBuffer = '';
         playerNameInputCursorBlink = 0;
+        comboStreak = 0;
+        comboKillProgress = 0;
+        comboMaxFlashUntil = 0;
         bossWeaponUnlockNoticeUntil = 0;
         
         // Reset upgrades
@@ -700,6 +709,39 @@ var game = (function () {
             outlineWidth: 2
         });
 
+        var comboMultiplier = getComboMultiplier();
+        var nowTime = new Date().getTime();
+        var maxComboFlashActive = nowTime < comboMaxFlashUntil;
+        var comboPulse = maxComboFlashActive ? ((Math.sin(nowTime / 65) + 1) / 2) : 0;
+        var comboText = 'COMBO x' + comboMultiplier;
+        if (comboMultiplier < comboMaxMultiplier) {
+            comboText += ' ' + comboKillProgress + '/' + getKillsNeededForNextCombo();
+        }
+
+        drawArcadeText(comboText, canvas.width / 2, 49, {
+            color: maxComboFlashActive ? '#fff6b0' : '#ffe680',
+            font: maxComboFlashActive ? "bold 15px 'Courier New', monospace" : "bold 13px 'Courier New', monospace",
+            align: 'center',
+            glowColor: maxComboFlashActive
+                ? 'rgba(255, 180, 70, ' + (0.55 + (comboPulse * 0.4)) + ')'
+                : 'rgba(255, 130, 45, 0.8)',
+            glowBlur: maxComboFlashActive ? (8 + Math.round(comboPulse * 3)) : 5,
+            outlineColor: arcadeTheme.outline,
+            outlineWidth: 2
+        });
+
+        if (maxComboFlashActive) {
+            drawArcadeText('MAX!', (canvas.width / 2) + 62, 49, {
+                color: '#ffd447',
+                font: "bold 12px 'Courier New', monospace",
+                align: 'left',
+                glowColor: 'rgba(255, 120, 20, ' + (0.5 + (comboPulse * 0.4)) + ')',
+                glowBlur: 6,
+                outlineColor: arcadeTheme.outline,
+                outlineWidth: 2
+            });
+        }
+
         if (currentStageType === 'boss') {
             drawBossOverallHealthBar();
             drawBossWeaponUnlockNotice();
@@ -811,6 +853,55 @@ var game = (function () {
 
     function getRandomNumber(range) {
         return Math.floor(Math.random() * range);
+    }
+
+    function getComboMultiplier() {
+        return Math.max(1, Math.min(comboMaxMultiplier, comboStreak));
+    }
+
+    function getKillsNeededForNextCombo() {
+        var currentMultiplier = getComboMultiplier();
+        if (currentMultiplier >= comboMaxMultiplier) {
+            return 0;
+        }
+        var stepIndex = Math.max(0, Math.min(comboKillsPerStep.length - 1, currentMultiplier - 1));
+        return Math.max(1, comboKillsPerStep[stepIndex] || 1);
+    }
+
+    function registerEnemyKillCombo() {
+        var currentMultiplier = getComboMultiplier();
+        if (currentMultiplier >= comboMaxMultiplier) {
+            return;
+        }
+
+        comboKillProgress++;
+        var killsNeeded = getKillsNeededForNextCombo();
+        if (comboKillProgress < killsNeeded) {
+            return;
+        }
+
+        var previousMultiplier = currentMultiplier;
+        comboKillProgress = 0;
+        comboStreak = Math.min(comboMaxMultiplier, comboStreak + 1);
+        currentMultiplier = getComboMultiplier();
+        if (previousMultiplier < comboMaxMultiplier && currentMultiplier === comboMaxMultiplier) {
+            comboMaxFlashUntil = new Date().getTime() + comboMaxFlashDuration;
+        }
+    }
+
+    function resetCombo() {
+        comboStreak = 0;
+        comboKillProgress = 0;
+        comboMaxFlashUntil = 0;
+    }
+
+    function addScoreForEnemyKill(enemy) {
+        if (!enemy) {
+            return;
+        }
+        registerEnemyKillCombo();
+        var comboMultiplier = getComboMultiplier();
+        player.score += Math.round(enemy.pointsToKill * playerScoreMultiplier * comboMultiplier);
     }
 
     function getRandomInRange(min, max) {
@@ -3116,7 +3207,7 @@ var game = (function () {
                     bossBombs[i].dead = true;
                 }
             }
-            player.score += Math.round(enemy.pointsToKill * playerScoreMultiplier);
+            addScoreForEnemyKill(enemy);
             return true;
         }
 
@@ -3182,7 +3273,7 @@ var game = (function () {
                 }
                 if (enemy.life <= 0) {
                     enemy.kill();
-                    player.score += Math.round(enemy.pointsToKill * playerScoreMultiplier);
+                    addScoreForEnemyKill(enemy);
                 }
 
                 if ((shot.remainingBounces || 0) > 0) {
@@ -3786,6 +3877,7 @@ var game = (function () {
                 enemy.update();
                 updateBossSpecialEvents(enemy);
                 if (enemy.isOutOfScreen()) {
+                    resetCombo();
                     enemy.kill();
                 }
             } else if (enemy.updateDeathEffect) {
