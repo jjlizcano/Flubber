@@ -237,6 +237,7 @@ var game = (function () {
     var gameMusicDuckForTransition = false;
     var playerDamageSound = null;
     var enemyDeathSound = null;
+    var playerShotSound = null;
     var enemyDeathSoundVolumeMultiplier = 0.2;
     var spriteTintCanvas = null;
     var spriteTintContext = null;
@@ -331,6 +332,15 @@ var game = (function () {
         return enemyDeathSound;
     }
 
+    function ensurePlayerShotSound() {
+        if (!playerShotSound) {
+            playerShotSound = new Audio('sounds/Lasergun.mp3');
+            playerShotSound.preload = 'auto';
+            playerShotSound.loop = false;
+        }
+        return playerShotSound;
+    }
+
     function playSoundEffect(baseSound, volumeMultiplier) {
         if (!baseSound) {
             return;
@@ -351,6 +361,10 @@ var game = (function () {
 
     function playEnemyDeathSound() {
         playSoundEffect(ensureEnemyDeathSound(), enemyDeathSoundVolumeMultiplier);
+    }
+
+    function playPlayerShotSound() {
+        playSoundEffect(ensurePlayerShotSound());
     }
 
     function padFrameNumber(number) {
@@ -2441,6 +2455,7 @@ var game = (function () {
                 playerShot.vx = 0;
                 playerShot.vy = -playerShot.speed;
                 playerShot.add();
+                playPlayerShotSound();
                 player.triggerShotFeedback();
                 now += playerShotDelay;
                 nextPlayerShot = now + playerShotDelay;
