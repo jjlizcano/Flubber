@@ -6,7 +6,7 @@ window.FlubberCollisionSystem = (function () {
             1: { left: 0.19, top: 0.16, right: 0.19, bottom: 0.18 },
             2: { left: 0.17, top: 0.17, right: 0.17, bottom: 0.17 },
             3: { left: 0.24, top: 0.17, right: 0.24, bottom: 0.19 },
-            4: { left: 0.17, top: 0.19, right: 0.17, bottom: 0.19 },
+            4: { left: 0.24, top: 0.17, right: 0.24, bottom: 0.19 },
             5: { left: 0.15, top: 0.19, right: 0.15, bottom: 0.21 },
             boss: { left: 0.13, top: 0.15, right: 0.13, bottom: 0.17 }
         },
@@ -14,7 +14,7 @@ window.FlubberCollisionSystem = (function () {
             1: { left: 0.16, top: 0.12, right: 0.16, bottom: 0.14 },
             2: { left: 0.14, top: 0.14, right: 0.14, bottom: 0.14 },
             3: { left: 0.2, top: 0.14, right: 0.2, bottom: 0.16 },
-            4: { left: 0.14, top: 0.16, right: 0.14, bottom: 0.16 },
+            4: { left: 0.2, top: 0.14, right: 0.2, bottom: 0.16 },
             5: { left: 0.12, top: 0.16, right: 0.12, bottom: 0.18 },
             boss: { left: 0.1, top: 0.12, right: 0.1, bottom: 0.14 }
         },
@@ -22,7 +22,7 @@ window.FlubberCollisionSystem = (function () {
             1: { left: 0.12, top: 0.09, right: 0.12, bottom: 0.11 },
             2: { left: 0.1, top: 0.1, right: 0.1, bottom: 0.1 },
             3: { left: 0.16, top: 0.11, right: 0.16, bottom: 0.13 },
-            4: { left: 0.1, top: 0.12, right: 0.1, bottom: 0.12 },
+            4: { left: 0.16, top: 0.11, right: 0.16, bottom: 0.13 },
             5: { left: 0.09, top: 0.12, right: 0.09, bottom: 0.14 },
             boss: { left: 0.07, top: 0.09, right: 0.07, bottom: 0.11 }
         }
@@ -124,8 +124,8 @@ window.FlubberCollisionSystem = (function () {
     }
 
     function getEnemyBounds(enemy) {
-        var width = enemy.spriteWidth || ((enemy.image && enemy.image.width) || 40);
-        var height = enemy.spriteHeight || ((enemy.image && enemy.image.height) || 40);
+        var width = (enemy.image && enemy.image.width) || enemy.spriteWidth || 40;
+        var height = (enemy.image && enemy.image.height) || enemy.spriteHeight || 40;
         var insets = getEnemyHitboxInsets(enemy, width, height);
         var hitboxWidth = Math.max(8, width - insets.left - insets.right);
         var hitboxHeight = Math.max(8, height - insets.top - insets.bottom);
@@ -142,21 +142,56 @@ window.FlubberCollisionSystem = (function () {
             return [];
         }
 
+        var bossCfg = gameConfig.bossLevelOne || {};
+        var defaultScale = typeof bossCfg.weaponHitboxScale === 'number' ? bossCfg.weaponHitboxScale : 1;
+        var scaleX = typeof bossCfg.weaponHitboxScaleX === 'number' ? bossCfg.weaponHitboxScaleX : defaultScale;
+        var scaleY = typeof bossCfg.weaponHitboxScaleY === 'number' ? bossCfg.weaponHitboxScaleY : defaultScale;
+        var spriteWidth = (enemy.image && enemy.image.width) || enemy.spriteWidth || 40;
+        var spriteHeight = (enemy.image && enemy.image.height) || enemy.spriteHeight || 40;
+
         var bounds = [];
         for (var i = 0; i < enemy.bossCombat.weapons.length; i++) {
             var weapon = enemy.bossCombat.weapons[i];
             if (!weapon || weapon.destroyed) {
                 continue;
             }
+
+            var offsetX = typeof weapon.offsetX === 'number' ? weapon.offsetX : 0;
+            var offsetY = typeof weapon.offsetY === 'number' ? weapon.offsetY : 0;
+            var width = typeof weapon.width === 'number' ? weapon.width : 10;
+            var height = typeof weapon.height === 'number' ? weapon.height : 10;
+
+            if (typeof weapon.xRatio === 'number') {
+                offsetX = Math.round(spriteWidth * weapon.xRatio);
+            }
+            if (typeof weapon.yRatio === 'number') {
+                offsetY = Math.round(spriteHeight * weapon.yRatio);
+            }
+            if (typeof weapon.widthRatio === 'number') {
+                width = Math.max(10, Math.round(spriteWidth * weapon.widthRatio));
+            }
+            if (typeof weapon.heightRatio === 'number') {
+                height = Math.max(10, Math.round(spriteHeight * weapon.heightRatio));
+            }
+
+            if (scaleX !== 1 || scaleY !== 1) {
+                var centerX = offsetX + (width / 2);
+                var centerY = offsetY + (height / 2);
+                width = Math.max(6, Math.round(width * scaleX));
+                height = Math.max(6, Math.round(height * scaleY));
+                offsetX = Math.round(centerX - (width / 2));
+                offsetY = Math.round(centerY - (height / 2));
+            }
+
             bounds.push({
                 id: weapon.id || ('weapon-' + i),
                 index: i,
-                left: enemy.posX + weapon.offsetX,
-                top: enemy.posY + weapon.offsetY,
-                right: enemy.posX + weapon.offsetX + weapon.width,
-                bottom: enemy.posY + weapon.offsetY + weapon.height,
-                width: weapon.width,
-                height: weapon.height
+                left: enemy.posX + offsetX,
+                top: enemy.posY + offsetY,
+                right: enemy.posX + offsetX + width,
+                bottom: enemy.posY + offsetY + height,
+                width: width,
+                height: height
             });
         }
 

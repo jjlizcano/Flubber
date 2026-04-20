@@ -149,6 +149,13 @@ window.FlubberEnemyEntity = (function () {
                     enemy.customAnimationFrameIndex = 0;
                     enemy.image = type3IdleFrame;
                 }
+            } else if (enemyImages.idle && enemyImages.idle.length) {
+                var bossIdleFrame = enemyImages.idle[0];
+                if (bossIdleFrame && bossIdleFrame.width && bossIdleFrame.height) {
+                    enemy.customAnimationFrames = enemyImages.idle;
+                    enemy.customAnimationFrameIndex = 0;
+                    enemy.image = bossIdleFrame;
+                }
             }
             enemy.spriteWidth = getImageDimension(enemy.image, 40);
             enemy.spriteHeight = getImageDimension(enemy.image, 40);
@@ -691,7 +698,7 @@ window.FlubberEnemyEntity = (function () {
                     enemy.image = getFirstFrame(enemy.deathAnimationFrames) || enemy.image;
                     return;
                 }
-                if (enemy.enemyType === 3 && enemyImages.type3Death && enemyImages.type3Death.length) {
+                if ((enemy.enemyType === 3 || enemy.enemyType === 4) && enemyImages.type3Death && enemyImages.type3Death.length) {
                     enemy.customAnimationFrames = null;
                     enemy.deathAnimationFrames = enemyImages.type3Death;
                     enemy.deathAnimationFrameIndex = 0;
@@ -961,6 +968,13 @@ window.FlubberEnemyEntity = (function () {
                 enemy.posX = getRandomNumber(Math.max(1, canvasWidth - enemy.spriteWidth));
                 enemy.posY = -enemy.spriteHeight - getRandomNumber(80);
             } else if (enemy.enemyType === 4) {
+                if (evilImages.type3Idle && evilImages.type3Idle.length) {
+                    enemy.customAnimationFrames = evilImages.type3Idle;
+                    enemy.customAnimationFrameIndex = 0;
+                    enemy.image = evilImages.type3Idle[0];
+                    enemy.spriteWidth = enemy.image.width || enemy.spriteWidth;
+                    enemy.spriteHeight = enemy.image.height || enemy.spriteHeight;
+                }
                 enemy.strikeMotion = true;
                 enemy.strikePhase = 0;
                 enemy.strikeDirection = getRandomNumber(2) === 0 ? -1 : 1;
@@ -1016,16 +1030,24 @@ window.FlubberEnemyEntity = (function () {
                 var weapons = [];
                 for (var i = 0; i < weaponLayout.length; i++) {
                     var weaponDef = weaponLayout[i];
+                    var weaponXRatio = typeof weaponDef.xRatio === 'number' ? weaponDef.xRatio : 0;
+                    var weaponYRatio = typeof weaponDef.yRatio === 'number' ? weaponDef.yRatio : 0;
+                    var weaponWidthRatio = typeof weaponDef.widthRatio === 'number' ? weaponDef.widthRatio : 0.2;
+                    var weaponHeightRatio = typeof weaponDef.heightRatio === 'number' ? weaponDef.heightRatio : 0.2;
                     weapons.push({
                         id: weaponDef.id || ('weapon-' + (i + 1)),
                         life: weaponLife,
                         maxLife: weaponLife,
                         unlocked: i < 2,
                         destroyed: false,
-                        offsetX: Math.round(spriteWidth * weaponDef.xRatio),
-                        offsetY: Math.round(spriteHeight * weaponDef.yRatio),
-                        width: Math.max(10, Math.round(spriteWidth * weaponDef.widthRatio)),
-                        height: Math.max(10, Math.round(spriteHeight * weaponDef.heightRatio))
+                        xRatio: weaponXRatio,
+                        yRatio: weaponYRatio,
+                        widthRatio: weaponWidthRatio,
+                        heightRatio: weaponHeightRatio,
+                        offsetX: Math.round(spriteWidth * weaponXRatio),
+                        offsetY: Math.round(spriteHeight * weaponYRatio),
+                        width: Math.max(10, Math.round(spriteWidth * weaponWidthRatio)),
+                        height: Math.max(10, Math.round(spriteHeight * weaponHeightRatio))
                     });
                 }
 

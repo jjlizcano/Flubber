@@ -103,6 +103,7 @@ var game = (function () {
         },
         bossImages = {
             animation : [],
+            idle: [],
             killed : new Image()
         },
         keyPressed = {},
@@ -230,11 +231,10 @@ var game = (function () {
     var pausedStageState = '';
     var pauseStartedAt = 0;
     var gameMusic = null;
+    var gameMusicSource = '';
     var gameMusicBaseVolume = 0.55;
     var gameMusicTransitionVolume = 0.32;
     var gameMusicDuckForTransition = false;
-    var tabOpenSound = null;
-    var tabOpenSoundPlayed = false;
     var spriteTintCanvas = null;
     var spriteTintContext = null;
 
@@ -256,11 +256,33 @@ var game = (function () {
         gameMusic.volume = baseVolume * getGameMusicVolume();
     }
 
+    function getCurrentGameMusicSource() {
+        if (stageState === 'playing' && currentStageType === 'boss') {
+            return 'music/Perfectcell.mp3';
+        }
+        return 'music/Starthropod.mp3';
+    }
+
     function ensureGameMusic() {
-        if (!gameMusic) {
-            gameMusic = new Audio('music/Starthropod.mp3');
+        var desiredSource = getCurrentGameMusicSource();
+
+        if (!gameMusic || gameMusicSource !== desiredSource) {
+            var shouldKeepPlaying = !!(gameMusic && !gameMusic.paused);
+            if (gameMusic) {
+                gameMusic.pause();
+            }
+
+            gameMusic = new Audio(desiredSource);
             gameMusic.loop = true;
             gameMusic.preload = 'auto';
+            gameMusicSource = desiredSource;
+
+            if (shouldKeepPlaying) {
+                var resumePromise = gameMusic.play();
+                if (resumePromise && typeof resumePromise.catch === 'function') {
+                    resumePromise.catch(function () {});
+                }
+            }
         }
 
         updateGameMusicVolume();
@@ -286,55 +308,6 @@ var game = (function () {
         if (gameMusic && !gameMusic.paused) {
             gameMusic.pause();
         }
-    }
-
-    function ensureTabOpenSound() {
-        if (!tabOpenSound) {
-            tabOpenSound = new Audio('music/Bluelobster.mp3');
-            tabOpenSound.preload = 'auto';
-            tabOpenSound.loop = false;
-        }
-        return tabOpenSound;
-    }
-
-    function tryPlayTabOpenSound() {
-        if (tabOpenSoundPlayed) {
-            return;
-        }
-
-        var sound = ensureTabOpenSound();
-        sound.currentTime = 0;
-        sound.volume = getGameMusicVolume();
-
-        var playPromise = sound.play();
-        if (playPromise && typeof playPromise.then === 'function') {
-            playPromise.then(function () {
-                tabOpenSoundPlayed = true;
-            }).catch(function () {});
-            return;
-        }
-
-        tabOpenSoundPlayed = true;
-    }
-
-    function wireTabOpenSoundFallback() {
-        function onFirstInteraction() {
-            if (tabOpenSoundPlayed) {
-                return;
-            }
-            tryPlayTabOpenSound();
-            if (tabOpenSoundPlayed) {
-                if (document.removeEventListener) {
-                    document.removeEventListener('keydown', onFirstInteraction);
-                    document.removeEventListener('mousedown', onFirstInteraction);
-                    document.removeEventListener('touchstart', onFirstInteraction);
-                }
-            }
-        }
-
-        addListener(document, 'keydown', onFirstInteraction);
-        addListener(document, 'mousedown', onFirstInteraction);
-        addListener(document, 'touchstart', onFirstInteraction);
     }
 
     function padFrameNumber(number) {
@@ -433,6 +406,10 @@ var game = (function () {
             var mineIdleFrame = new Image();
             mineIdleFrame.src = 'images/mineidle/' + frameName;
             mineAnimations.idle[frameIndex] = mineIdleFrame;
+
+            var bossIdleFrame = new Image();
+            bossIdleFrame.src = 'images/bossidle/' + frameName;
+            bossImages.idle[frameIndex] = bossIdleFrame;
         }
 
         for (var deathFrameIndex = 0; deathFrameIndex < 15; deathFrameIndex++) {
@@ -455,6 +432,13 @@ var game = (function () {
             var malo2IdleFrame = new Image();
             malo2IdleFrame.src = 'images/malo2idle/' + type2FrameName;
             evilImages.type2Idle[type2FrameIndex] = malo2IdleFrame;
+        }
+
+        for (var bossIdleFrameIndex = 0; bossIdleFrameIndex < 35; bossIdleFrameIndex++) {
+            var bossIdleFrameName = 'frame_' + padFrameNumber(bossIdleFrameIndex) + '.png';
+            var fullBossIdleFrame = new Image();
+            fullBossIdleFrame.src = 'images/bossidle/' + bossIdleFrameName;
+            bossImages.idle[bossIdleFrameIndex] = fullBossIdleFrame;
         }
 
         for (var i = 1; i <= 8; i++) {
@@ -584,9 +568,6 @@ var game = (function () {
         loadDebugStartConfigFromUrl();
         applyDebugStartConfig();
         startMainMenu();
-
-        tryPlayTabOpenSound();
-        wireTabOpenSoundFallback();
 
         addListener(document, 'keydown', keyDown);
         addListener(document, 'keyup', keyUp);
@@ -2586,6 +2567,9 @@ var game = (function () {
         } else if (this.fixedSpriteIndex === 2 && enemyImages.type3Idle && enemyImages.type3Idle.length) {
             this.customAnimationFrames = enemyImages.type3Idle;
             this.image = this.customAnimationFrames[0];
+        } else if (enemyImages.idle && enemyImages.idle.length) {
+            this.customAnimationFrames = enemyImages.idle;
+            this.image = this.customAnimationFrames[0];
         }
         this.animation = 0;
         this.spriteWidth = this.image.width || 40;
@@ -2741,7 +2725,7 @@ var game = (function () {
                 this.image = getFirstFrame(this.deathAnimationFrames) || this.image;
                 return;
             }
-            if (this.enemyType === 3 && enemyImages.type3Death && enemyImages.type3Death.length) {
+            if ((this.enemyType === 3 || this.enemyType === 4) && enemyImages.type3Death && enemyImages.type3Death.length) {
                 this.customAnimationFrames = null;
                 this.deathAnimationFrames = enemyImages.type3Death;
                 this.deathAnimationFrameIndex = 0;
@@ -3283,6 +3267,13 @@ var game = (function () {
             this.posX = getRandomNumber(Math.max(1, canvas.width - this.spriteWidth));
             this.posY = -this.spriteHeight - getRandomNumber(80);
         } else if (this.enemyType === 4) {
+            if (evilImages.type3Idle && evilImages.type3Idle.length) {
+                this.customAnimationFrames = evilImages.type3Idle;
+                this.customAnimationFrameIndex = 0;
+                this.image = evilImages.type3Idle[0];
+                this.spriteWidth = this.image.width || this.spriteWidth;
+                this.spriteHeight = this.image.height || this.spriteHeight;
+            }
             this.strikeMotion = true;
             this.strikePhase = 0;
             this.strikeDirection = getRandomNumber(2) === 0 ? -1 : 1;
@@ -3391,21 +3382,55 @@ var game = (function () {
             return [];
         }
 
+        var bossCfg = getBossBattleConfig();
+        var defaultScale = typeof bossCfg.weaponHitboxScale === 'number' ? bossCfg.weaponHitboxScale : 1;
+        var scaleX = typeof bossCfg.weaponHitboxScaleX === 'number' ? bossCfg.weaponHitboxScaleX : defaultScale;
+        var scaleY = typeof bossCfg.weaponHitboxScaleY === 'number' ? bossCfg.weaponHitboxScaleY : defaultScale;
+        var spriteWidth = (enemy.image && enemy.image.width) || enemy.spriteWidth || 40;
+        var spriteHeight = (enemy.image && enemy.image.height) || enemy.spriteHeight || 40;
         var bounds = [];
         for (var i = 0; i < enemy.bossCombat.weapons.length; i++) {
             var weapon = enemy.bossCombat.weapons[i];
             if (!weapon || weapon.destroyed) {
                 continue;
             }
+
+            var offsetX = typeof weapon.offsetX === 'number' ? weapon.offsetX : 0;
+            var offsetY = typeof weapon.offsetY === 'number' ? weapon.offsetY : 0;
+            var width = typeof weapon.width === 'number' ? weapon.width : 10;
+            var height = typeof weapon.height === 'number' ? weapon.height : 10;
+
+            if (typeof weapon.xRatio === 'number') {
+                offsetX = Math.round(spriteWidth * weapon.xRatio);
+            }
+            if (typeof weapon.yRatio === 'number') {
+                offsetY = Math.round(spriteHeight * weapon.yRatio);
+            }
+            if (typeof weapon.widthRatio === 'number') {
+                width = Math.max(10, Math.round(spriteWidth * weapon.widthRatio));
+            }
+            if (typeof weapon.heightRatio === 'number') {
+                height = Math.max(10, Math.round(spriteHeight * weapon.heightRatio));
+            }
+
+            if (scaleX !== 1 || scaleY !== 1) {
+                var centerX = offsetX + (width / 2);
+                var centerY = offsetY + (height / 2);
+                width = Math.max(6, Math.round(width * scaleX));
+                height = Math.max(6, Math.round(height * scaleY));
+                offsetX = Math.round(centerX - (width / 2));
+                offsetY = Math.round(centerY - (height / 2));
+            }
+
             bounds.push({
                 id: weapon.id || ('weapon-' + i),
                 index: i,
-                left: enemy.posX + weapon.offsetX,
-                top: enemy.posY + weapon.offsetY,
-                right: enemy.posX + weapon.offsetX + weapon.width,
-                bottom: enemy.posY + weapon.offsetY + weapon.height,
-                width: weapon.width,
-                height: weapon.height
+                left: enemy.posX + offsetX,
+                top: enemy.posY + offsetY,
+                right: enemy.posX + offsetX + width,
+                bottom: enemy.posY + offsetY + height,
+                width: width,
+                height: height
             });
         }
         return bounds;
@@ -4286,13 +4311,6 @@ var game = (function () {
             var enemy = activeEnemies[e];
             if (enemy && !enemy.shouldDisappear) {
                 var enemyImage = isDrawableImage(enemy.image) ? enemy.image : null;
-                if (enemy.enemyType === 4 && evilImages.type3Idle && evilImages.type3Idle.length) {
-                    var type3FrameIndex = Math.floor(new Date().getTime() / playerAnimations.frameDurationMs) % evilImages.type3Idle.length;
-                    var type3Frame = evilImages.type3Idle[type3FrameIndex];
-                    if (isDrawableImage(type3Frame)) {
-                        enemyImage = type3Frame;
-                    }
-                }
                 var enemyAlpha = typeof enemy.deathFadeAlpha === 'number' ? enemy.deathFadeAlpha : 1;
                 var enemyAngle = 0;
                 if (enemy.enemyType === 1) {
@@ -4315,6 +4333,10 @@ var game = (function () {
                     }
                 } else if (!enemy.dead && enemy.enemyType === 3 && enemy.hunterState === 'dash' && typeof enemy.renderAngle === 'number') {
                     enemyAngle = enemy.renderAngle;
+                }
+                var isBossEnemy = !!enemy.bossCombat || !!enemy.isBossLevelOne || typeof enemy.bossLevel === 'number';
+                if (isBossEnemy) {
+                    enemyAngle = 0;
                 }
                 if (enemyAlpha < 1 || enemyAngle !== 0) {
                     bufferctx.save();

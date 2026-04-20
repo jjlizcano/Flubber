@@ -102,12 +102,13 @@ window.FlubberGameConfig = {
         shootDelayMin: 920,
         shootDelayMax: 1450,
         initialShootDelay: 1250,
+        weaponHitboxScale: 0.9,
         weaponBonusScore: 8,
         weaponLayout: [
-            { id: 'weapon-1', xRatio: -0.9, yRatio: 0.20, widthRatio: 0.4, heightRatio: 0.4 },
-            { id: 'weapon-2', xRatio: 1.2, yRatio: 0.20, widthRatio: 0.4, heightRatio: 0.4 },
-            { id: 'weapon-3', xRatio: -0.3, yRatio: 0.6, widthRatio: 0.4, heightRatio: 0.4 },
-            { id: 'weapon-4', xRatio: 0.6, yRatio: 0.6, widthRatio: 0.4, heightRatio: 0.4 }
+            { id: 'weapon-1', xRatio: 0.12, yRatio: 0.20, widthRatio: 0.22, heightRatio: 0.23 },
+            { id: 'weapon-2', xRatio: 0.66, yRatio: 0.20, widthRatio: 0.22, heightRatio: 0.23 },
+            { id: 'weapon-3', xRatio: 0.18, yRatio: 0.55, widthRatio: 0.20, heightRatio: 0.24 },
+            { id: 'weapon-4', xRatio: 0.62, yRatio: 0.55, widthRatio: 0.20, heightRatio: 0.24 }
         ],
         fanSpreadRadians: 0.82,
         projectileSpeed: 3.6,
