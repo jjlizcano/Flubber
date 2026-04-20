@@ -46,6 +46,7 @@ window.FlubberGameConfig = {
     playerSpeed: 5,
     stageSummaryDuration: 2000,
     stageCountdownDuration: 3000,
+    bossDefeatFlashDurationMs: 4000,
     minHorizontalOffset: 100,
     maxHorizontalOffset: 400,
     totalBestScoresToShow: 5,

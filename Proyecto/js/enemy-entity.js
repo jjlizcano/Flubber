@@ -215,9 +215,6 @@ window.FlubberEnemyEntity = (function () {
                 rightShot.vy = rightShot.speed;
                 rightShot.add();
             }
-                        if (typeof options.getEnemyShotImageByType === 'function') {
-                            zigzagShot.image = options.getEnemyShotImageByType(enemy.enemyType) || zigzagShot.image;
-                        }
 
             function getFirstFrame(frames) {
                 function isUsableFrame(frame) {
@@ -680,6 +677,9 @@ window.FlubberEnemyEntity = (function () {
                         rightShot.add();
                     } else if (enemy.enemyType === 4) {
                         var zigzagShot = options.createEvilShot(centerX, baseY);
+                        if (typeof options.getEnemyShotImageByType === 'function') {
+                            zigzagShot.image = options.getEnemyShotImageByType(enemy.enemyType) || zigzagShot.image;
+                        }
                         zigzagShot.vx = 0;
                         zigzagShot.waveMotion = true;
                         zigzagShot.waveBaseX = centerX;

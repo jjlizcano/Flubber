@@ -129,6 +129,7 @@ var game = (function () {
     var bossDefeatFlashDurationMs = gameConfig.bossDefeatFlashDurationMs || 700;
     var bossDefeatHoldDurationMs = gameConfig.bossDefeatHoldDurationMs || 2200;
     var bossDefeatEnemyRef = null;
+    var bossDefeatSpriteSwapApplied = false;
 
     var arcadeTheme = {
         panelBg: 'rgba(25, 8, 32, 0.7)',
@@ -2035,6 +2036,7 @@ var game = (function () {
         bossWeaponUnlockNoticeUntil = 0;
         bossDefeatCinematicStartAt = 0;
         bossDefeatEnemyRef = null;
+        bossDefeatSpriteSwapApplied = false;
     }
 
     function clearStageSpawnScheduler() {
@@ -2207,6 +2209,7 @@ var game = (function () {
         }
 
         bossDefeatEnemyRef = defeatedBoss;
+        bossDefeatSpriteSwapApplied = false;
         bossDefeatCinematicStartAt = new Date().getTime();
         stageState = 'boss_defeat_cinematic';
         stageMessage = '';
@@ -2220,9 +2223,6 @@ var game = (function () {
 
         defeatedBoss.shouldDisappear = false;
         defeatedBoss.deathFadeAlpha = 1;
-        if (isDrawableImage(bossImages.death)) {
-            defeatedBoss.image = bossImages.death;
-        }
     }
 
     function drawBossDefeatCinematic() {
@@ -2233,11 +2233,15 @@ var game = (function () {
 
         var elapsedMs = nowTime - bossDefeatCinematicStartAt;
         var defeatedBoss = getDefeatedBossForCinematic();
+        var didSwapToBossDeathThisFrame = false;
         if (defeatedBoss) {
             defeatedBoss.shouldDisappear = false;
             defeatedBoss.deathFadeAlpha = 1;
-            if (isDrawableImage(bossImages.death)) {
+
+            if (!bossDefeatSpriteSwapApplied && isDrawableImage(bossImages.death)) {
                 defeatedBoss.image = bossImages.death;
+                bossDefeatSpriteSwapApplied = true;
+                didSwapToBossDeathThisFrame = true;
             }
 
             var bossImage = isDrawableImage(defeatedBoss.image) ? defeatedBoss.image : null;
@@ -2251,6 +2255,9 @@ var game = (function () {
         var flashAlpha = 0;
         if (elapsedMs < bossDefeatFlashDurationMs) {
             flashAlpha = 1 - (elapsedMs / Math.max(1, bossDefeatFlashDurationMs));
+        }
+        if (didSwapToBossDeathThisFrame) {
+            flashAlpha = 1;
         }
 
         if (flashAlpha > 0) {
@@ -2266,6 +2273,7 @@ var game = (function () {
         if (elapsedMs >= (bossDefeatFlashDurationMs + bossDefeatHoldDurationMs)) {
             bossDefeatCinematicStartAt = 0;
             bossDefeatEnemyRef = null;
+            bossDefeatSpriteSwapApplied = false;
             completeStageClear();
         }
     }
