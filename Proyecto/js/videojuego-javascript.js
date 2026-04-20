@@ -73,6 +73,8 @@ var game = (function () {
         playerShotsBuffer = [],
         evilShotsBuffer = [],
         evilShotImage,
+        evilShotWaterImage,
+        evilShotInkImage,
         playerShotImage,
         playerKilledImage,
         mineExplodeImage,
@@ -249,6 +251,12 @@ var game = (function () {
     var enemyDeathSoundVolumeMultiplier = 0.2;
     var spriteTintCanvas = null;
     var spriteTintContext = null;
+    var backgroundWaveCanvas = null;
+    var backgroundWaveContext = null;
+    var backgroundWaveAmplitudePx = typeof gameConfig.backgroundWaveAmplitudePx === 'number' ? gameConfig.backgroundWaveAmplitudePx : 6;
+    var backgroundWaveFrequency = typeof gameConfig.backgroundWaveFrequency === 'number' ? gameConfig.backgroundWaveFrequency : 0.04;
+    var backgroundWaveSpeed = typeof gameConfig.backgroundWaveSpeed === 'number' ? gameConfig.backgroundWaveSpeed : 3.2;
+    var backgroundWaveStripeHeight = typeof gameConfig.backgroundWaveStripeHeight === 'number' ? gameConfig.backgroundWaveStripeHeight : 2;
 
     function loop() {
         update();
@@ -380,6 +388,16 @@ var game = (function () {
             return '00' + number;
         }
         return '0' + number;
+    }
+
+    function getEnemyShotImageByType(enemyType) {
+        if (enemyType === 3) {
+            return evilShotInkImage || evilShotImage;
+        }
+        if (enemyType === 1 || enemyType === 2 || enemyType === 5) {
+            return evilShotWaterImage || evilShotImage;
+        }
+        return evilShotImage;
     }
 
     function isDrawableImage(image) {
@@ -555,6 +573,10 @@ var game = (function () {
         playerShotImage.src = 'images/disparo_bueno.png';
         evilShotImage = new Image();
         evilShotImage.src = 'images/disparo_malo.png';
+        evilShotWaterImage = new Image();
+        evilShotWaterImage.src = 'images/disparo_agua.png';
+        evilShotInkImage = new Image();
+        evilShotInkImage.src = 'images/disparo_tinta.png';
         playerKilledImage = new Image();
         playerKilledImage.src = 'images/bueno_muerto.png';
         mineExplodeImage = new Image();
@@ -707,6 +729,7 @@ var game = (function () {
             getPlayer: function() {
                 return player;
             },
+            getEnemyShotImageByType: getEnemyShotImageByType,
             playEnemyDeathSound: playEnemyDeathSound,
             createEvilShot: function(x, y) {
                 return new EvilShot(x, y);
@@ -3004,6 +3027,7 @@ var game = (function () {
             var centerX = enemy.posX + (enemy.image.width / 2) - 5;
             var baseY = enemy.posY + enemy.image.height;
             var shot = new EvilShot(centerX, baseY);
+            shot.image = getEnemyShotImageByType(enemy.enemyType);
             shot.vx = 0;
             shot.add();
             if (enemy.enemyType !== 3) {
@@ -3208,6 +3232,7 @@ var game = (function () {
             for (var shotIndex = 0; shotIndex < totalShots; shotIndex++) {
                 var angle = startAngle + (step * shotIndex);
                 var fanShot = new EvilShot(centerX, baseY);
+                fanShot.image = getEnemyShotImageByType(enemy.enemyType);
                 fanShot.vx = Math.sin(angle) * fanShot.speed * 0.45;
                 fanShot.vy = Math.max(1.8, Math.cos(angle) * fanShot.speed * 0.75);
                 fanShot.add();
@@ -3398,10 +3423,12 @@ var game = (function () {
                 var baseY = enemy.posY + enemy.image.height;
                 if (enemy.enemyType === 2) {
                     var leftShot = new EvilShot(centerX - 8, baseY);
+                    leftShot.image = getEnemyShotImageByType(enemy.enemyType);
                     leftShot.vx = -2.2;
                     leftShot.add();
 
                     var rightShot = new EvilShot(centerX + 8, baseY);
+                    rightShot.image = getEnemyShotImageByType(enemy.enemyType);
                     rightShot.vx = 2.2;
                     rightShot.add();
                 } else if (enemy.enemyType === 4) {
@@ -3415,6 +3442,7 @@ var game = (function () {
                     zigzagShot.add();
                 } else {
                     var disparo = new EvilShot(centerX, baseY);
+                    disparo.image = getEnemyShotImageByType(enemy.enemyType);
                     disparo.add();
                 }
                 scheduleNextShot(enemy, getRandomNumber(3000));
@@ -4739,7 +4767,55 @@ var game = (function () {
 
     function drawBackground() {
         var background = stageState === 'menu' ? bgMain : (currentStageType === 'boss' ? bgBoss : bgMain);
-        bufferctx.drawImage(background, 0, 0);
+        if (!background || !isDrawableImage(background) || !canvas || !bufferctx) {
+            if (background) {
+                bufferctx.drawImage(background, 0, 0);
+            }
+            return;
+        }
+
+        var width = canvas.width;
+        var height = canvas.height;
+
+        if (!backgroundWaveCanvas) {
+            backgroundWaveCanvas = document.createElement('canvas');
+            backgroundWaveContext = backgroundWaveCanvas.getContext('2d');
+        }
+
+        if (backgroundWaveCanvas.width !== width) {
+            backgroundWaveCanvas.width = width;
+        }
+        if (backgroundWaveCanvas.height !== height) {
+            backgroundWaveCanvas.height = height;
+        }
+
+        backgroundWaveContext.clearRect(0, 0, width, height);
+        backgroundWaveContext.drawImage(background, 0, 0, width, height);
+
+        var waveTime = new Date().getTime() / 1000;
+        var stripeHeight = Math.max(1, Math.round(backgroundWaveStripeHeight));
+        var amplitude = Math.max(0, backgroundWaveAmplitudePx);
+
+        for (var y = 0; y < height; y += stripeHeight) {
+            var sliceHeight = Math.min(stripeHeight, height - y);
+            var shift = Math.round(Math.sin((y * backgroundWaveFrequency) + (waveTime * backgroundWaveSpeed)) * amplitude);
+
+            if (shift === 0) {
+                bufferctx.drawImage(backgroundWaveCanvas, 0, y, width, sliceHeight, 0, y, width, sliceHeight);
+                continue;
+            }
+
+            if (shift > 0) {
+                var rightWidth = width - shift;
+                bufferctx.drawImage(backgroundWaveCanvas, 0, y, rightWidth, sliceHeight, shift, y, rightWidth, sliceHeight);
+                bufferctx.drawImage(backgroundWaveCanvas, rightWidth, y, shift, sliceHeight, 0, y, shift, sliceHeight);
+            } else {
+                var leftShift = -shift;
+                var leftWidth = width - leftShift;
+                bufferctx.drawImage(backgroundWaveCanvas, leftShift, y, leftWidth, sliceHeight, 0, y, leftWidth, sliceHeight);
+                bufferctx.drawImage(backgroundWaveCanvas, 0, y, leftShift, sliceHeight, leftWidth, y, leftShift, sliceHeight);
+            }
+        }
     }
 
     function updateEnemies() {

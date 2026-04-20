@@ -57,7 +57,7 @@ window.FlubberCollisionSystem = (function () {
     function getPlayerHitCircle(player, playerSpriteImage) {
         var width = player && player.width ? player.width : ((playerSpriteImage && playerSpriteImage.width) || 52);
         var height = player && player.height ? player.height : 66;
-        var radius = Math.max(11, Math.round(Math.min(width, height) * 0.18));
+        var radius = Math.max(10, Math.round(Math.min(width, height) * 0.16));
 
         return {
             x: (player ? player.posX : 0) + (width / 2),

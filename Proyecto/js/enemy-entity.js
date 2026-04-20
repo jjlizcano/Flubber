@@ -184,6 +184,9 @@ window.FlubberEnemyEntity = (function () {
                 var centerX = enemy.posX + (enemy.spriteWidth / 2) - 5;
                 var baseY = enemy.posY + enemy.spriteHeight;
                 var shot = options.createEvilShot(centerX, baseY);
+                if (typeof options.getEnemyShotImageByType === 'function') {
+                    shot.image = options.getEnemyShotImageByType(enemy.enemyType) || shot.image;
+                }
                 shot.vx = 0;
                 shot.add();
             }
@@ -197,11 +200,17 @@ window.FlubberEnemyEntity = (function () {
                 var baseY = enemy.posY + enemy.spriteHeight;
 
                 var leftShot = options.createEvilShot(centerX - 8, baseY);
+                if (typeof options.getEnemyShotImageByType === 'function') {
+                    leftShot.image = options.getEnemyShotImageByType(enemy.enemyType) || leftShot.image;
+                }
                 leftShot.vx = 0;
                 leftShot.vy = leftShot.speed;
                 leftShot.add();
 
                 var rightShot = options.createEvilShot(centerX + 8, baseY);
+                if (typeof options.getEnemyShotImageByType === 'function') {
+                    rightShot.image = options.getEnemyShotImageByType(enemy.enemyType) || rightShot.image;
+                }
                 rightShot.vx = 0;
                 rightShot.vy = rightShot.speed;
                 rightShot.add();
@@ -481,6 +490,9 @@ window.FlubberEnemyEntity = (function () {
                 for (var shotIndex = 0; shotIndex < totalShots; shotIndex++) {
                     var angle = startAngle + (step * shotIndex);
                     var fanShot = options.createEvilShot(centerX, baseY);
+                    if (typeof options.getEnemyShotImageByType === 'function') {
+                        fanShot.image = options.getEnemyShotImageByType(enemy.enemyType) || fanShot.image;
+                    }
                     fanShot.vx = Math.sin(angle) * fanShot.speed * 0.45;
                     fanShot.vy = Math.max(1.8, Math.cos(angle) * fanShot.speed * 0.75);
                     fanShot.add();
@@ -651,10 +663,16 @@ window.FlubberEnemyEntity = (function () {
                     var baseY = enemy.posY + enemy.spriteHeight;
                     if (enemy.enemyType === 2) {
                         var leftShot = options.createEvilShot(centerX - 8, baseY);
+                        if (typeof options.getEnemyShotImageByType === 'function') {
+                            leftShot.image = options.getEnemyShotImageByType(enemy.enemyType) || leftShot.image;
+                        }
                         leftShot.vx = -2.2;
                         leftShot.add();
 
                         var rightShot = options.createEvilShot(centerX + 8, baseY);
+                        if (typeof options.getEnemyShotImageByType === 'function') {
+                            rightShot.image = options.getEnemyShotImageByType(enemy.enemyType) || rightShot.image;
+                        }
                         rightShot.vx = 2.2;
                         rightShot.add();
                     } else if (enemy.enemyType === 4) {
@@ -668,6 +686,9 @@ window.FlubberEnemyEntity = (function () {
                         zigzagShot.add();
                     } else {
                         var shot = options.createEvilShot(centerX, baseY);
+                        if (typeof options.getEnemyShotImageByType === 'function') {
+                            shot.image = options.getEnemyShotImageByType(enemy.enemyType) || shot.image;
+                        }
                         shot.add();
                     }
                     scheduleShoot(options.getRandomNumber(3000));
