@@ -115,6 +115,7 @@ window.FlubberEnemyEntity = (function () {
                 sentinelDiagonalDuration: 1400,
                 sentinelFanShots: 5,
                 sentinelFanSpread: 1.7,
+                type5AttackActive: false,
                 enemyType: 1,
                 pointsToKill: 5,
                 isBossLevelOne: false,
@@ -148,6 +149,13 @@ window.FlubberEnemyEntity = (function () {
                     enemy.customAnimationFrames = enemyImages.type3Idle;
                     enemy.customAnimationFrameIndex = 0;
                     enemy.image = type3IdleFrame;
+                }
+            } else if (enemy.fixedSpriteIndex === 4 && enemyImages.type5Idle && enemyImages.type5Idle.length) {
+                var type5IdleFrame = enemyImages.type5Idle[0];
+                if (type5IdleFrame && type5IdleFrame.width && type5IdleFrame.height) {
+                    enemy.customAnimationFrames = enemyImages.type5Idle;
+                    enemy.customAnimationFrameIndex = 0;
+                    enemy.image = type5IdleFrame;
                 }
             } else if (enemyImages.idle && enemyImages.idle.length) {
                 var bossIdleFrame = enemyImages.idle[0];
@@ -454,6 +462,15 @@ window.FlubberEnemyEntity = (function () {
                     return;
                 }
 
+                if (enemy.enemyType === 5 && enemyImages.type5Attack && enemyImages.type5Attack.length) {
+                    enemy.customAnimationFrames = enemyImages.type5Attack;
+                    enemy.customAnimationFrameIndex = 0;
+                    enemy.type5AttackActive = true;
+                    if (enemyImages.type5Attack[0] && enemyImages.type5Attack[0].width && enemyImages.type5Attack[0].height) {
+                        enemy.image = enemyImages.type5Attack[0];
+                    }
+                }
+
                 var totalShots = Math.max(3, enemy.sentinelFanShots || 5);
                 var spread = enemy.sentinelFanSpread || 1.7;
                 var step = totalShots > 1 ? (spread / (totalShots - 1)) : 0;
@@ -713,6 +730,18 @@ window.FlubberEnemyEntity = (function () {
                     enemy.image = getFirstFrame(enemy.deathAnimationFrames) || enemy.image;
                     return;
                 }
+                if (enemy.enemyType === 5 && enemyImages.type5Death && enemyImages.type5Death.length) {
+                    enemy.customAnimationFrames = null;
+                    enemy.deathAnimationFrames = enemyImages.type5Death;
+                    enemy.deathAnimationFrameIndex = 0;
+                    enemy.deathAnimationFinalFrame = getLastFrame(enemy.deathAnimationFrames) || enemy.image;
+                    enemy.deathAnimationCompleted = false;
+                    enemy.deathFadeAlpha = 1;
+                    enemy.deathFadeDelayCounter = 8;
+                    enemy.shouldDisappear = false;
+                    enemy.image = getFirstFrame(enemy.deathAnimationFrames) || enemy.image;
+                    return;
+                }
                 enemy.image = enemyImages.killed;
             };
 
@@ -761,7 +790,17 @@ window.FlubberEnemyEntity = (function () {
                 var animationLength = enemyImages.animation && enemyImages.animation.length ? enemyImages.animation.length : 8;
 
                 if (enemy.customAnimationFrames && enemy.customAnimationFrames.length) {
-                    enemy.customAnimationFrameIndex = (enemy.customAnimationFrameIndex + 1) % enemy.customAnimationFrames.length;
+                    var nextCustomFrameIndex = (enemy.customAnimationFrameIndex + 1) % enemy.customAnimationFrames.length;
+                    if (enemy.enemyType === 5 && enemy.type5AttackActive && enemy.customAnimationFrames === enemyImages.type5Attack && nextCustomFrameIndex === 0 && enemyImages.type5Idle && enemyImages.type5Idle.length) {
+                        enemy.type5AttackActive = false;
+                        enemy.customAnimationFrames = enemyImages.type5Idle;
+                        enemy.customAnimationFrameIndex = 0;
+                        if (enemyImages.type5Idle[0] && enemyImages.type5Idle[0].width && enemyImages.type5Idle[0].height) {
+                            enemy.image = enemyImages.type5Idle[0];
+                        }
+                        return;
+                    }
+                    enemy.customAnimationFrameIndex = nextCustomFrameIndex;
                     var customFrame = enemy.customAnimationFrames[enemy.customAnimationFrameIndex];
                     if (customFrame && customFrame.width && customFrame.height) {
                         enemy.image = customFrame;
@@ -991,6 +1030,14 @@ window.FlubberEnemyEntity = (function () {
                 enemy.posY = -enemy.spriteHeight - getRandomNumber(70);
             } else if (enemy.enemyType === 5) {
                 enemy.stopShooting();
+                if (evilImages.type5Idle && evilImages.type5Idle.length) {
+                    enemy.customAnimationFrames = evilImages.type5Idle;
+                    enemy.customAnimationFrameIndex = 0;
+                    enemy.image = evilImages.type5Idle[0];
+                    enemy.spriteWidth = enemy.image.width || enemy.spriteWidth;
+                    enemy.spriteHeight = enemy.image.height || enemy.spriteHeight;
+                }
+                enemy.type5AttackActive = false;
                 enemy.sentinelMotion = true;
                 enemy.sentinelState = 'enter';
                 enemy.sentinelEnterTargetY = 75 + getRandomNumber(95);

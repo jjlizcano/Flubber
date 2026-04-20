@@ -99,11 +99,15 @@ var game = (function () {
             type3Charge: [],
             type3Dash: [],
             type3Death: [],
+            type5Idle: [],
+            type5Attack: [],
+            type5Death: [],
             killed : new Image()
         },
         bossImages = {
             animation : [],
             idle: [],
+            death: new Image(),
             killed : new Image()
         },
         keyPressed = {},
@@ -119,6 +123,10 @@ var game = (function () {
 
     var bossWeaponUnlockNoticeUntil = 0;
     var bossWeaponUnlockNoticeDuration = gameConfig.bossWeaponUnlockNoticeDurationMs || 1400;
+    var bossDefeatCinematicStartAt = 0;
+    var bossDefeatFlashDurationMs = gameConfig.bossDefeatFlashDurationMs || 700;
+    var bossDefeatHoldDurationMs = gameConfig.bossDefeatHoldDurationMs || 2200;
+    var bossDefeatEnemyRef = null;
 
     var arcadeTheme = {
         panelBg: 'rgba(25, 8, 32, 0.7)',
@@ -456,6 +464,10 @@ var game = (function () {
             malo3DashFrame.src = 'images/malo3dash/' + frameName;
             evilImages.type3Dash[frameIndex] = malo3DashFrame;
 
+            var malo5IdleFrame = new Image();
+            malo5IdleFrame.src = 'images/malo5idle/' + frameName;
+            evilImages.type5Idle[frameIndex] = malo5IdleFrame;
+
             var mineSpawnFrame = new Image();
             mineSpawnFrame.src = 'images/minespawn/' + frameName;
             mineAnimations.spawn[frameIndex] = mineSpawnFrame;
@@ -484,11 +496,25 @@ var game = (function () {
             evilImages.type3Death[deathFrameIndex] = malo3DeathFrame;
         }
 
+        for (var type5DeathFrameIndex = 0; type5DeathFrameIndex < 16; type5DeathFrameIndex++) {
+            var type5DeathFrameName = 'frame_' + padFrameNumber(type5DeathFrameIndex) + '.png';
+            var malo5DeathFrame = new Image();
+            malo5DeathFrame.src = 'images/malo5death/' + type5DeathFrameName;
+            evilImages.type5Death[type5DeathFrameIndex] = malo5DeathFrame;
+        }
+
         for (var type2FrameIndex = 0; type2FrameIndex < playerAnimations.frameCount; type2FrameIndex++) {
             var type2FrameName = 'frame_' + padFrameNumber(type2FrameIndex) + '.png';
             var malo2IdleFrame = new Image();
             malo2IdleFrame.src = 'images/malo2idle/' + type2FrameName;
             evilImages.type2Idle[type2FrameIndex] = malo2IdleFrame;
+        }
+
+        for (var type5AttackFrameIndex = 0; type5AttackFrameIndex < 5; type5AttackFrameIndex++) {
+            var type5AttackFrameName = 'frame_' + padFrameNumber(type5AttackFrameIndex) + '.png';
+            var malo5AttackFrame = new Image();
+            malo5AttackFrame.src = 'images/malo5attack/' + type5AttackFrameName;
+            evilImages.type5Attack[type5AttackFrameIndex] = malo5AttackFrame;
         }
 
         for (var bossIdleFrameIndex = 0; bossIdleFrameIndex < 35; bossIdleFrameIndex++) {
@@ -515,8 +541,12 @@ var game = (function () {
         if (evilImages.type3Idle.length) {
             evilImages.animation[2] = evilImages.type3Idle[0];
         }
+        if (evilImages.type5Idle.length) {
+            evilImages.animation[4] = evilImages.type5Idle[0];
+        }
         evilImages.killed.src = 'images/malo_muerto.png';
         bossImages.killed.src = 'images/jefe_muerto.png';
+        bossImages.death.src = 'images/bossdeath.png';
         bgMain = new Image();
         bgMain.src = 'images/fondovertical.png';
         bgBoss = new Image();
@@ -817,7 +847,7 @@ var game = (function () {
                 playerCircle = {
                     x: player.posX + (width / 2),
                     y: player.posY + Math.round(height * 0.44),
-                    radius: Math.max(12, Math.round(Math.min(width, height) * 0.28))
+                    radius: Math.max(12, Math.round(Math.min(width, height) * 0.20))
                 };
             }
 
@@ -1980,6 +2010,8 @@ var game = (function () {
         pendingStageSpawns = 0;
         spawnedStageEnemies = 0;
         bossWeaponUnlockNoticeUntil = 0;
+        bossDefeatCinematicStartAt = 0;
+        bossDefeatEnemyRef = null;
     }
 
     function clearStageSpawnScheduler() {
@@ -2116,12 +2148,103 @@ var game = (function () {
     }
 
     function handleStageCleared() {
+        if (currentStageType === 'boss') {
+            startBossDefeatCinematic();
+            return;
+        }
+
         if (shouldOpenRewardSelector()) {
             openRewardSelector();
             return;
         }
 
         completeStageClear();
+    }
+
+    function getDefeatedBossForCinematic() {
+        if (bossDefeatEnemyRef) {
+            return bossDefeatEnemyRef;
+        }
+
+        for (var i = 0; i < activeEnemies.length; i++) {
+            var enemy = activeEnemies[i];
+            if (enemy && enemy.isBossLevelOne) {
+                return enemy;
+            }
+        }
+
+        return null;
+    }
+
+    function startBossDefeatCinematic() {
+        var defeatedBoss = getDefeatedBossForCinematic();
+        if (!defeatedBoss) {
+            completeStageClear();
+            return;
+        }
+
+        bossDefeatEnemyRef = defeatedBoss;
+        bossDefeatCinematicStartAt = new Date().getTime();
+        stageState = 'boss_defeat_cinematic';
+        stageMessage = '';
+        stageTransitionUntil = 0;
+
+        clearStageSpawnScheduler();
+        stopActiveEnemyShooting();
+        evilShotsBuffer.splice(0, evilShotsBuffer.length);
+        playerShotsBuffer.splice(0, playerShotsBuffer.length);
+        bossBombs.splice(0, bossBombs.length);
+
+        defeatedBoss.shouldDisappear = false;
+        defeatedBoss.deathFadeAlpha = 1;
+        if (isDrawableImage(bossImages.death)) {
+            defeatedBoss.image = bossImages.death;
+        }
+    }
+
+    function drawBossDefeatCinematic() {
+        var nowTime = new Date().getTime();
+        if (!bossDefeatCinematicStartAt) {
+            bossDefeatCinematicStartAt = nowTime;
+        }
+
+        var elapsedMs = nowTime - bossDefeatCinematicStartAt;
+        var defeatedBoss = getDefeatedBossForCinematic();
+        if (defeatedBoss) {
+            defeatedBoss.shouldDisappear = false;
+            defeatedBoss.deathFadeAlpha = 1;
+            if (isDrawableImage(bossImages.death)) {
+                defeatedBoss.image = bossImages.death;
+            }
+
+            var bossImage = isDrawableImage(defeatedBoss.image) ? defeatedBoss.image : null;
+            if (bossImage) {
+                var bossWidth = bossImage.width || defeatedBoss.spriteWidth || 40;
+                var bossHeight = bossImage.height || defeatedBoss.spriteHeight || 40;
+                drawSpriteWithTint(bossImage, Math.round(defeatedBoss.posX), Math.round(defeatedBoss.posY), bossWidth, bossHeight, null);
+            }
+        }
+
+        var flashAlpha = 0;
+        if (elapsedMs < bossDefeatFlashDurationMs) {
+            flashAlpha = 1 - (elapsedMs / Math.max(1, bossDefeatFlashDurationMs));
+        }
+
+        if (flashAlpha > 0) {
+            bufferctx.save();
+            bufferctx.globalAlpha = Math.max(0, Math.min(1, flashAlpha));
+            bufferctx.fillStyle = '#ffffff';
+            bufferctx.fillRect(0, 0, canvas.width, canvas.height);
+            bufferctx.restore();
+        }
+
+        showLifeAndScore();
+
+        if (elapsedMs >= (bossDefeatFlashDurationMs + bossDefeatHoldDurationMs)) {
+            bossDefeatCinematicStartAt = 0;
+            bossDefeatEnemyRef = null;
+            completeStageClear();
+        }
     }
 
     function completeStageClear() {
@@ -2626,6 +2749,9 @@ var game = (function () {
         } else if (this.fixedSpriteIndex === 2 && enemyImages.type3Idle && enemyImages.type3Idle.length) {
             this.customAnimationFrames = enemyImages.type3Idle;
             this.image = this.customAnimationFrames[0];
+        } else if (this.fixedSpriteIndex === 4 && enemyImages.type5Idle && enemyImages.type5Idle.length) {
+            this.customAnimationFrames = enemyImages.type5Idle;
+            this.image = this.customAnimationFrames[0];
         } else if (enemyImages.idle && enemyImages.idle.length) {
             this.customAnimationFrames = enemyImages.idle;
             this.image = this.customAnimationFrames[0];
@@ -2691,6 +2817,7 @@ var game = (function () {
         this.sentinelDiagonalDuration = 1400;
         this.sentinelFanShots = 5;
         this.sentinelFanSpread = 1.7;
+        this.type5AttackActive = false;
 
         var desplazamientoHorizontal = minHorizontalOffset +
             getRandomNumber(maxHorizontalOffset - minHorizontalOffset);
@@ -2788,6 +2915,18 @@ var game = (function () {
             if ((this.enemyType === 3 || this.enemyType === 4) && enemyImages.type3Death && enemyImages.type3Death.length) {
                 this.customAnimationFrames = null;
                 this.deathAnimationFrames = enemyImages.type3Death;
+                this.deathAnimationFrameIndex = 0;
+                this.deathAnimationFinalFrame = getLastFrame(this.deathAnimationFrames) || this.image;
+                this.deathAnimationCompleted = false;
+                this.deathFadeAlpha = 1;
+                this.deathFadeDelayCounter = 8;
+                this.shouldDisappear = false;
+                this.image = getFirstFrame(this.deathAnimationFrames) || this.image;
+                return;
+            }
+            if (this.enemyType === 5 && enemyImages.type5Death && enemyImages.type5Death.length) {
+                this.customAnimationFrames = null;
+                this.deathAnimationFrames = enemyImages.type5Death;
                 this.deathAnimationFrameIndex = 0;
                 this.deathAnimationFinalFrame = getLastFrame(this.deathAnimationFrames) || this.image;
                 this.deathAnimationCompleted = false;
@@ -3050,6 +3189,15 @@ var game = (function () {
                 return;
             }
 
+            if (enemy.enemyType === 5 && evilImages.type5Attack && evilImages.type5Attack.length) {
+                enemy.customAnimationFrames = evilImages.type5Attack;
+                enemy.customAnimationFrameIndex = 0;
+                enemy.type5AttackActive = true;
+                if (isDrawableImage(evilImages.type5Attack[0])) {
+                    enemy.image = evilImages.type5Attack[0];
+                }
+            }
+
             var totalShots = Math.max(3, enemy.sentinelFanShots || 5);
             var spread = enemy.sentinelFanSpread || 1.7;
             var step = totalShots > 1 ? (spread / (totalShots - 1)) : 0;
@@ -3192,7 +3340,17 @@ var game = (function () {
             if (this.animation > 5) {
                 this.animation = 0;
                 if (this.customAnimationFrames && this.customAnimationFrames.length) {
-                    this.customAnimationFrameIndex = (this.customAnimationFrameIndex + 1) % this.customAnimationFrames.length;
+                    var nextCustomFrameIndex = (this.customAnimationFrameIndex + 1) % this.customAnimationFrames.length;
+                    if (this.enemyType === 5 && this.type5AttackActive && this.customAnimationFrames === evilImages.type5Attack && nextCustomFrameIndex === 0 && evilImages.type5Idle && evilImages.type5Idle.length) {
+                        this.type5AttackActive = false;
+                        this.customAnimationFrames = evilImages.type5Idle;
+                        this.customAnimationFrameIndex = 0;
+                        if (isDrawableImage(evilImages.type5Idle[0])) {
+                            this.image = evilImages.type5Idle[0];
+                        }
+                        return;
+                    }
+                    this.customAnimationFrameIndex = nextCustomFrameIndex;
                     var customFrame = this.customAnimationFrames[this.customAnimationFrameIndex];
                     if (isDrawableImage(customFrame)) {
                         this.image = customFrame;
@@ -3347,6 +3505,14 @@ var game = (function () {
             this.posY = -this.spriteHeight - getRandomNumber(70);
         } else if (this.enemyType === 5) {
             this.stopShooting();
+            if (evilImages.type5Idle && evilImages.type5Idle.length) {
+                this.customAnimationFrames = evilImages.type5Idle;
+                this.customAnimationFrameIndex = 0;
+                this.image = evilImages.type5Idle[0];
+                this.spriteWidth = this.image.width || this.spriteWidth;
+                this.spriteHeight = this.image.height || this.spriteHeight;
+            }
+            this.type5AttackActive = false;
             this.sentinelMotion = true;
             this.sentinelState = 'enter';
             this.sentinelEnterTargetY = 75 + getRandomNumber(95);
@@ -4327,6 +4493,11 @@ var game = (function () {
         if (stageState === 'reward_pending') {
             drawRewardSelector();
             showLifeAndScore();
+            return;
+        }
+
+        if (stageState === 'boss_defeat_cinematic') {
+            drawBossDefeatCinematic();
             return;
         }
 
