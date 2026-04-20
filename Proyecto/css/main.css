@@ -83,7 +83,7 @@ ul.lista {
 ul.lista li {
     padding: 10px 0;
 }
-ul.lista li.firefox, ul.lista li.chrome, ul.lista li.safari, ul.lista li.izquierda, ul.lista li.derecha, ul.lista li.espacio {
+ul.lista li.chrome, ul.lista li.safari, ul.lista li.izquierda, ul.lista li.derecha, ul.lista li.espacio {
     padding-left: 40px;
 }
 ul.lista li.izquierda {
@@ -94,9 +94,6 @@ ul.lista li.derecha {
 }
 ul.lista li.espacio {
     background: url("../images/space.gif") no-repeat left;
-}
-ul.lista li.firefox {
-    background: url("../images/firefox.png") no-repeat left;
 }
 ul.lista li.chrome {
     background: url("../images/chrome.png") no-repeat left;
