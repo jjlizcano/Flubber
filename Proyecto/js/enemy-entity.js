@@ -215,6 +215,9 @@ window.FlubberEnemyEntity = (function () {
                 rightShot.vy = rightShot.speed;
                 rightShot.add();
             }
+                        if (typeof options.getEnemyShotImageByType === 'function') {
+                            zigzagShot.image = options.getEnemyShotImageByType(enemy.enemyType) || zigzagShot.image;
+                        }
 
             function getFirstFrame(frames) {
                 function isUsableFrame(frame) {
