@@ -315,9 +315,13 @@ var game = (function () {
         updateGameMusicVolume();
     }
 
-    function playGameMusic() {
+    function playGameMusic(restartFromBeginning) {
         var music = ensureGameMusic();
         updateGameMusicVolume();
+
+        if (restartFromBeginning) {
+            music.currentTime = 0;
+        }
 
         var playPromise = music.play();
         if (playPromise && typeof playPromise.catch === 'function') {
@@ -644,7 +648,7 @@ var game = (function () {
         clearStageEntities();
         clearKeyPressedState();
         setGameMusicDuckForTransition(false);
-        playGameMusic();
+        pauseGameMusic();
     }
 
     function startGameFromMainMenu() {
@@ -653,6 +657,7 @@ var game = (function () {
         applyDebugStartConfig();
         player = new Player(playerLife, 0);
         applyDebugRewardsForTest();
+        playGameMusic(true);
         startCountdown('Nivel ' + currentLevel);
         showLifeAndScore();
     }
