@@ -1,15 +1,31 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+:root {
+    --arcade-bg-dark: #170b22;
+    --arcade-bg-mid: #2b1439;
+    --arcade-bg-light: #4d1d48;
+    --arcade-primary: #ffd447;
+    --arcade-secondary: #ff9f1a;
+    --arcade-link: #ffd86b;
+    --arcade-link-hover: #ff6f3c;
+    --arcade-panel: rgba(20, 8, 28, 0.72);
+    --arcade-border: rgba(255, 181, 54, 0.85);
+}
+
 body {
-    background: #ccc;
-    color: #333;
-    font: 14px 'Arial',sans-serif;
+    background: radial-gradient(circle at top, var(--arcade-bg-light) 0%, var(--arcade-bg-mid) 45%, var(--arcade-bg-dark) 100%);
+    color: var(--arcade-primary);
+    font: 14px 'Press Start 2P', 'Courier New', monospace;
     text-align: center;
+    min-height: 100vh;
 }
 a {
-    color: #506e2f;
+    color: var(--arcade-link);
     text-decoration: none;
+    text-shadow: 0 0 6px rgba(255, 182, 80, 0.65);
 }
 a:hover {
-    color: #ff4500;
+    color: var(--arcade-link-hover);
 }
 div.contenedor {
     width: 100%;
@@ -26,7 +42,10 @@ div.juego {
 
 }
 div.juego canvas {
-    box-shadow: 0 0 30px #000;
+    border: 3px solid var(--arcade-border);
+    box-shadow: 0 0 18px rgba(255, 125, 0, 0.75), 0 0 38px rgba(255, 202, 77, 0.5), inset 0 0 18px rgba(255, 95, 0, 0.25);
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
 }
 div.derecha {
     float: right;
@@ -34,6 +53,8 @@ div.derecha {
 div.derecha h3.tituloPuntuaciones {
     background: url("../images/medalla.png") no-repeat left;
     padding: 10px;
+    color: var(--arcade-primary);
+    text-shadow: 0 0 7px rgba(255, 170, 40, 0.75);
 }
 div.derecha ul#puntuaciones {
     width: 300px;
@@ -44,7 +65,7 @@ div.derecha ul#puntuaciones {
 
 div.derecha ul#puntuaciones li{
     line-height:1.5em;
-    border-bottom:1px solid #aaa;
+    border-bottom:1px solid rgba(255, 194, 92, 0.35);
     float:left;
     display:inline;
     width: 50%;
@@ -62,7 +83,7 @@ ul.lista {
 ul.lista li {
     padding: 10px 0;
 }
-ul.lista li.firefox, ul.lista li.chrome, ul.lista li.safari, ul.lista li.izquierda, ul.lista li.derecha, ul.lista li.espacio {
+ul.lista li.chrome, ul.lista li.safari, ul.lista li.izquierda, ul.lista li.derecha, ul.lista li.espacio {
     padding-left: 40px;
 }
 ul.lista li.izquierda {
@@ -74,9 +95,6 @@ ul.lista li.derecha {
 ul.lista li.espacio {
     background: url("../images/space.gif") no-repeat left;
 }
-ul.lista li.firefox {
-    background: url("../images/firefox.png") no-repeat left;
-}
 ul.lista li.chrome {
     background: url("../images/chrome.png") no-repeat left;
 }
@@ -85,4 +103,5 @@ ul.lista li.safari {
 }
 ul.lista li.titulo {
     font-weight: bold;
+    color: var(--arcade-secondary);
 }
