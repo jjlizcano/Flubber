@@ -674,6 +674,9 @@ window.FlubberEnemyEntity = (function () {
                     }
                 }
                 enemy.dead = true;
+                if (typeof options.playEnemyDeathSound === 'function') {
+                    options.playEnemyDeathSound();
+                }
                 if (enemy.fixedSpriteIndex === 0 && enemyImages.type1Death && enemyImages.type1Death.length) {
                     enemy.customAnimationFrames = null;
                     enemy.deathAnimationFrames = enemyImages.type1Death;

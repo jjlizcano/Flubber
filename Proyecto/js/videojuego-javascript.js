@@ -235,6 +235,9 @@ var game = (function () {
     var gameMusicBaseVolume = 0.55;
     var gameMusicTransitionVolume = 0.32;
     var gameMusicDuckForTransition = false;
+    var playerDamageSound = null;
+    var enemyDeathSound = null;
+    var enemyDeathSoundVolumeMultiplier = 0.2;
     var spriteTintCanvas = null;
     var spriteTintContext = null;
 
@@ -308,6 +311,46 @@ var game = (function () {
         if (gameMusic && !gameMusic.paused) {
             gameMusic.pause();
         }
+    }
+
+    function ensurePlayerDamageSound() {
+        if (!playerDamageSound) {
+            playerDamageSound = new Audio('sounds/Etgdeath.mp3');
+            playerDamageSound.preload = 'auto';
+            playerDamageSound.loop = false;
+        }
+        return playerDamageSound;
+    }
+
+    function ensureEnemyDeathSound() {
+        if (!enemyDeathSound) {
+            enemyDeathSound = new Audio('sounds/Etgbulletkindeathsound.mp3');
+            enemyDeathSound.preload = 'auto';
+            enemyDeathSound.loop = false;
+        }
+        return enemyDeathSound;
+    }
+
+    function playSoundEffect(baseSound, volumeMultiplier) {
+        if (!baseSound) {
+            return;
+        }
+
+        var sound = baseSound.cloneNode();
+        var multiplier = typeof volumeMultiplier === 'number' ? volumeMultiplier : 1;
+        sound.volume = Math.max(0, Math.min(1, getGameMusicVolume() * multiplier));
+        var playPromise = sound.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(function () {});
+        }
+    }
+
+    function playPlayerDamageSound() {
+        playSoundEffect(ensurePlayerDamageSound());
+    }
+
+    function playEnemyDeathSound() {
+        playSoundEffect(ensureEnemyDeathSound(), enemyDeathSoundVolumeMultiplier);
     }
 
     function padFrameNumber(number) {
@@ -620,6 +663,7 @@ var game = (function () {
             getPlayer: function() {
                 return player;
             },
+            playEnemyDeathSound: playEnemyDeathSound,
             createEvilShot: function(x, y) {
                 return new EvilShot(x, y);
             }
@@ -2701,6 +2745,7 @@ var game = (function () {
                 }
             }
             this.dead = true;
+            playEnemyDeathSound();
             if (this.fixedSpriteIndex === 0 && enemyImages.type1Death && enemyImages.type1Death.length) {
                 this.customAnimationFrames = null;
                 this.deathAnimationFrames = enemyImages.type1Death;
@@ -4786,6 +4831,7 @@ var game = (function () {
             return;
         }
         player.invulnerableUntil = nowTime + 2000;
+        playPlayerDamageSound();
         player.killPlayer(nowTime);
     }
 
