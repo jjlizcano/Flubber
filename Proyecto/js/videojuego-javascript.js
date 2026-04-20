@@ -75,12 +75,19 @@ var game = (function () {
         evilShotImage,
         playerShotImage,
         playerKilledImage,
+        mineExplodeImage,
         playerAnimations = {
             idle: [],
             left: [],
             right: [],
             frameCount: 16,
             frameDurationMs: 1000 / 16
+        },
+        mineAnimations = {
+            spawn: [],
+            idle: [],
+            frameCount: 16,
+            frameDurationTicks: 4
         },
         evilImages = {
             animation : [],
@@ -226,6 +233,10 @@ var game = (function () {
     var gameMusicBaseVolume = 0.55;
     var gameMusicTransitionVolume = 0.32;
     var gameMusicDuckForTransition = false;
+    var tabOpenSound = null;
+    var tabOpenSoundPlayed = false;
+    var spriteTintCanvas = null;
+    var spriteTintContext = null;
 
     function loop() {
         update();
@@ -277,6 +288,55 @@ var game = (function () {
         }
     }
 
+    function ensureTabOpenSound() {
+        if (!tabOpenSound) {
+            tabOpenSound = new Audio('music/Bluelobster.mp3');
+            tabOpenSound.preload = 'auto';
+            tabOpenSound.loop = false;
+        }
+        return tabOpenSound;
+    }
+
+    function tryPlayTabOpenSound() {
+        if (tabOpenSoundPlayed) {
+            return;
+        }
+
+        var sound = ensureTabOpenSound();
+        sound.currentTime = 0;
+        sound.volume = getGameMusicVolume();
+
+        var playPromise = sound.play();
+        if (playPromise && typeof playPromise.then === 'function') {
+            playPromise.then(function () {
+                tabOpenSoundPlayed = true;
+            }).catch(function () {});
+            return;
+        }
+
+        tabOpenSoundPlayed = true;
+    }
+
+    function wireTabOpenSoundFallback() {
+        function onFirstInteraction() {
+            if (tabOpenSoundPlayed) {
+                return;
+            }
+            tryPlayTabOpenSound();
+            if (tabOpenSoundPlayed) {
+                if (document.removeEventListener) {
+                    document.removeEventListener('keydown', onFirstInteraction);
+                    document.removeEventListener('mousedown', onFirstInteraction);
+                    document.removeEventListener('touchstart', onFirstInteraction);
+                }
+            }
+        }
+
+        addListener(document, 'keydown', onFirstInteraction);
+        addListener(document, 'mousedown', onFirstInteraction);
+        addListener(document, 'touchstart', onFirstInteraction);
+    }
+
     function padFrameNumber(number) {
         if (number < 10) {
             return '00' + number;
@@ -296,6 +356,42 @@ var game = (function () {
         var width = typeof image.naturalWidth === 'number' ? image.naturalWidth : image.width;
         var height = typeof image.naturalHeight === 'number' ? image.naturalHeight : image.height;
         return !!(width && height);
+    }
+
+    function drawSpriteWithTint(image, drawX, drawY, drawWidth, drawHeight, tintColor) {
+        if (!isDrawableImage(image)) {
+            return;
+        }
+
+        if (!tintColor) {
+            bufferctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+            return;
+        }
+
+        if (!spriteTintCanvas) {
+            spriteTintCanvas = document.createElement('canvas');
+            spriteTintContext = spriteTintCanvas.getContext('2d');
+        }
+
+        var safeWidth = Math.max(1, Math.round(drawWidth));
+        var safeHeight = Math.max(1, Math.round(drawHeight));
+
+        if (spriteTintCanvas.width !== safeWidth) {
+            spriteTintCanvas.width = safeWidth;
+        }
+        if (spriteTintCanvas.height !== safeHeight) {
+            spriteTintCanvas.height = safeHeight;
+        }
+
+        spriteTintContext.clearRect(0, 0, safeWidth, safeHeight);
+        spriteTintContext.globalCompositeOperation = 'source-over';
+        spriteTintContext.drawImage(image, 0, 0, safeWidth, safeHeight);
+        spriteTintContext.globalCompositeOperation = 'source-atop';
+        spriteTintContext.fillStyle = tintColor;
+        spriteTintContext.fillRect(0, 0, safeWidth, safeHeight);
+        spriteTintContext.globalCompositeOperation = 'source-over';
+
+        bufferctx.drawImage(spriteTintCanvas, drawX, drawY, drawWidth, drawHeight);
     }
 
     function preloadImages () {
@@ -329,6 +425,14 @@ var game = (function () {
             var malo3DashFrame = new Image();
             malo3DashFrame.src = 'images/malo3dash/' + frameName;
             evilImages.type3Dash[frameIndex] = malo3DashFrame;
+
+            var mineSpawnFrame = new Image();
+            mineSpawnFrame.src = 'images/minespawn/' + frameName;
+            mineAnimations.spawn[frameIndex] = mineSpawnFrame;
+
+            var mineIdleFrame = new Image();
+            mineIdleFrame.src = 'images/mineidle/' + frameName;
+            mineAnimations.idle[frameIndex] = mineIdleFrame;
         }
 
         for (var deathFrameIndex = 0; deathFrameIndex < 15; deathFrameIndex++) {
@@ -382,6 +486,8 @@ var game = (function () {
         evilShotImage.src = 'images/disparo_malo.png';
         playerKilledImage = new Image();
         playerKilledImage.src = 'images/bueno_muerto.png';
+        mineExplodeImage = new Image();
+        mineExplodeImage.src = 'images/mineexplode.png';
 
     }
     function resetGameState() {
@@ -478,6 +584,9 @@ var game = (function () {
         loadDebugStartConfigFromUrl();
         applyDebugStartConfig();
         startMainMenu();
+
+        tryPlayTabOpenSound();
+        wireTabOpenSoundFallback();
 
         addListener(document, 'keydown', keyDown);
         addListener(document, 'keyup', keyUp);
@@ -3377,7 +3486,13 @@ var game = (function () {
             posX: 30 + getRandomNumber(Math.max(1, canvas.width - 60)),
             posY: minY + getRandomNumber(Math.max(1, maxY - minY)),
             radius: 16,
-            dead: false
+            dead: false,
+            shouldRemove: false,
+            state: 'spawn',
+            frameIndex: 0,
+            frameTick: 0,
+            explodeAlpha: 1,
+            explodeFadeStep: 0.06
         };
 
         bossBombs.push(bomb);
@@ -3410,6 +3525,10 @@ var game = (function () {
         }
 
         bomb.dead = true;
+        bomb.state = 'explode';
+        bomb.frameIndex = 0;
+        bomb.frameTick = 0;
+        bomb.explodeAlpha = 1;
 
         if (ownerEnemy && ownerEnemy.bossCombat && ownerEnemy.bossCombat.firstWeaponDestroyedTriggered) {
             var bonusScore = Math.max(1, bossConfig.bombScoreBase || 9);
@@ -3491,7 +3610,7 @@ var game = (function () {
 
     function removeDeadBossBombs() {
         for (var i = bossBombs.length - 1; i >= 0; i--) {
-            if (bossBombs[i].dead) {
+            if (bossBombs[i].shouldRemove) {
                 arrayRemove(bossBombs, i);
             }
         }
@@ -3500,7 +3619,53 @@ var game = (function () {
     function drawBossBombs() {
         for (var i = 0; i < bossBombs.length; i++) {
             var bomb = bossBombs[i];
-            if (!bomb || bomb.dead) {
+            if (!bomb || bomb.shouldRemove) {
+                continue;
+            }
+
+            var bombImage = null;
+            if (bomb.state === 'spawn') {
+                if (bomb.frameTick >= mineAnimations.frameDurationTicks) {
+                    bomb.frameTick = 0;
+                    bomb.frameIndex++;
+                }
+                bomb.frameTick++;
+
+                if (bomb.frameIndex >= mineAnimations.frameCount) {
+                    bomb.state = 'idle';
+                    bomb.frameIndex = 0;
+                    bomb.frameTick = 0;
+                }
+
+                bombImage = mineAnimations.spawn[Math.max(0, Math.min(mineAnimations.frameCount - 1, bomb.frameIndex))] || null;
+            } else if (bomb.state === 'idle') {
+                if (bomb.frameTick >= mineAnimations.frameDurationTicks) {
+                    bomb.frameTick = 0;
+                    bomb.frameIndex = (bomb.frameIndex + 1) % mineAnimations.frameCount;
+                }
+                bomb.frameTick++;
+                bombImage = mineAnimations.idle[Math.max(0, Math.min(mineAnimations.frameCount - 1, bomb.frameIndex))] || null;
+            } else if (bomb.state === 'explode') {
+                bomb.explodeAlpha = Math.max(0, (typeof bomb.explodeAlpha === 'number' ? bomb.explodeAlpha : 1) - (bomb.explodeFadeStep || 0.06));
+                if (bomb.explodeAlpha <= 0) {
+                    bomb.shouldRemove = true;
+                    continue;
+                }
+                bombImage = mineExplodeImage;
+            }
+
+            if (isDrawableImage(bombImage)) {
+                var imageWidth = bombImage.width;
+                var imageHeight = bombImage.height;
+                var drawX = Math.round(bomb.posX - (imageWidth / 2));
+                var drawY = Math.round(bomb.posY - (imageHeight / 2));
+
+                bufferctx.save();
+                if (bomb.state === 'explode') {
+                    bufferctx.globalAlpha = bomb.explodeAlpha;
+                }
+                bufferctx.drawImage(bombImage, drawX, drawY);
+                bufferctx.restore();
                 continue;
             }
 
@@ -3596,7 +3761,8 @@ var game = (function () {
             enemy.kill();
             for (var i = 0; i < bossBombs.length; i++) {
                 if (bossBombs[i]) {
-                    bossBombs[i].dead = true;
+                        bossBombs[i].dead = true;
+                        bossBombs[i].shouldRemove = true;
                 }
             }
             addScoreForEnemyKill(enemy);
@@ -4120,6 +4286,13 @@ var game = (function () {
             var enemy = activeEnemies[e];
             if (enemy && !enemy.shouldDisappear) {
                 var enemyImage = isDrawableImage(enemy.image) ? enemy.image : null;
+                if (enemy.enemyType === 4 && evilImages.type3Idle && evilImages.type3Idle.length) {
+                    var type3FrameIndex = Math.floor(new Date().getTime() / playerAnimations.frameDurationMs) % evilImages.type3Idle.length;
+                    var type3Frame = evilImages.type3Idle[type3FrameIndex];
+                    if (isDrawableImage(type3Frame)) {
+                        enemyImage = type3Frame;
+                    }
+                }
                 var enemyAlpha = typeof enemy.deathFadeAlpha === 'number' ? enemy.deathFadeAlpha : 1;
                 var enemyAngle = 0;
                 if (enemy.enemyType === 1) {
@@ -4150,6 +4323,14 @@ var game = (function () {
                     }
                 }
                 if (enemyImage) {
+                    var applyType2BlueTint = enemy.enemyType === 2;
+                    var applyType4OrangeTint = enemy.enemyType === 4;
+                    var tintColor = null;
+                    if (applyType2BlueTint) {
+                        tintColor = 'rgba(0, 0, 255, 0.38)';
+                    } else if (applyType4OrangeTint) {
+                        tintColor = 'rgba(255, 132, 20, 0.55)';
+                    }
                     if (enemyAngle !== 0) {
                         var enemyWidth = enemyImage.width || (enemy.spriteWidth || 40);
                         var enemyHeight = enemyImage.height || (enemy.spriteHeight || 40);
@@ -4157,9 +4338,13 @@ var game = (function () {
                         var enemyCenterY = Math.round(enemy.posY) + (enemyHeight / 2);
                         bufferctx.translate(enemyCenterX, enemyCenterY);
                         bufferctx.rotate(enemyAngle * Math.PI / 180);
-                        bufferctx.drawImage(enemyImage, -(enemyWidth / 2), -(enemyHeight / 2));
+                        drawSpriteWithTint(enemyImage, -(enemyWidth / 2), -(enemyHeight / 2), enemyWidth, enemyHeight, tintColor);
                     } else {
-                        bufferctx.drawImage(enemyImage, Math.round(enemy.posX), Math.round(enemy.posY));
+                        var drawX = Math.round(enemy.posX);
+                        var drawY = Math.round(enemy.posY);
+                        var drawWidth = enemyImage.width || (enemy.spriteWidth || 40);
+                        var drawHeight = enemyImage.height || (enemy.spriteHeight || 40);
+                        drawSpriteWithTint(enemyImage, drawX, drawY, drawWidth, drawHeight, tintColor);
                     }
                 }
                 if (enemyAlpha < 1 || enemyAngle !== 0) {
