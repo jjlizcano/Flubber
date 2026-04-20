@@ -391,7 +391,7 @@ var game = (function () {
     }
 
     function getEnemyShotImageByType(enemyType) {
-        if (enemyType === 3) {
+        if (enemyType === 3 || enemyType === 4) {
             return evilShotInkImage || evilShotImage;
         }
         if (enemyType === 1 || enemyType === 2 || enemyType === 5) {
@@ -3433,6 +3433,7 @@ var game = (function () {
                     rightShot.add();
                 } else if (enemy.enemyType === 4) {
                     var zigzagShot = new EvilShot(centerX, baseY);
+                    zigzagShot.image = getEnemyShotImageByType(enemy.enemyType);
                     zigzagShot.vx = 0;
                     zigzagShot.waveMotion = true;
                     zigzagShot.waveBaseX = centerX;
