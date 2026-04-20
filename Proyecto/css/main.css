@@ -13,16 +13,21 @@
 }
 
 body {
-    background: radial-gradient(circle at top, var(--arcade-bg-light) 0%, var(--arcade-bg-mid) 45%, var(--arcade-bg-dark) 100%);
+    background-color: var(--arcade-bg-dark);
+    background-image: url("../images/fondowebpage.png");
+    background-repeat: no-repeat;
+    background-position: center top;
+    background-size: cover;
     color: var(--arcade-primary);
     font: 14px 'Press Start 2P', 'Courier New', monospace;
+    text-shadow: 1px 1px 0 #000;
     text-align: center;
     min-height: 100vh;
 }
 a {
     color: var(--arcade-link);
     text-decoration: none;
-    text-shadow: 0 0 6px rgba(255, 182, 80, 0.65);
+    text-shadow: 1px 1px 0 #000;
 }
 a:hover {
     color: var(--arcade-link-hover);
@@ -54,7 +59,7 @@ div.derecha h3.tituloPuntuaciones {
     background: url("../images/medalla.png") no-repeat left;
     padding: 10px;
     color: var(--arcade-primary);
-    text-shadow: 0 0 7px rgba(255, 170, 40, 0.75);
+    text-shadow: 1px 1px 0 #000;
 }
 div.derecha ul#puntuaciones {
     width: 300px;
