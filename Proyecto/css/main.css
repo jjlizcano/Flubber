@@ -14,7 +14,7 @@
 
 body {
     background-color: var(--arcade-bg-dark);
-    background-image: url("../images/fondowebpage.png");
+    background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.8)), url("../images/fondowebpage.png");
     background-repeat: no-repeat;
     background-position: center top;
     background-size: cover;

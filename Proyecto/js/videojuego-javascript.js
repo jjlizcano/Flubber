@@ -130,6 +130,7 @@ var game = (function () {
     var bossDefeatHoldDurationMs = gameConfig.bossDefeatHoldDurationMs || 2200;
     var bossDefeatEnemyRef = null;
     var bossDefeatSpriteSwapApplied = false;
+    var bossDefeatFlashSoundPlayed = false;
 
     var arcadeTheme = {
         panelBg: 'rgba(25, 8, 32, 0.7)',
@@ -158,6 +159,9 @@ var game = (function () {
         1: { spriteIndex: 0, lifeBonus: 0, shotsBonus: 0, speedBonus: 0.00, pointsBonus: 0 },
         2: { spriteIndex: 4, lifeBonus: 4, shotsBonus: 4, speedBonus: 0.10, pointsBonus: 15 }
     };
+    var finalBossLifeMultiplier = typeof gameConfig.finalBossLifeMultiplier === 'number'
+        ? Math.max(1, gameConfig.finalBossLifeMultiplier)
+        : 2;
 
     var rewardCatalog = {
         cadence: { id: 'cadence', name: 'Mas cadencia', description: 'Disparas mas rapido', maxStacks: 3, oneTime: false, rarity: 'common' },
@@ -249,11 +253,20 @@ var game = (function () {
     var playerDamageSound = null;
     var enemyDeathSound = null;
     var playerShotSound = null;
+    var bossDefeatFlashSound = null;
     var enemyDeathSoundVolumeMultiplier = 0.2;
     var spriteTintCanvas = null;
     var spriteTintContext = null;
     var backgroundWaveCanvas = null;
     var backgroundWaveContext = null;
+    var backgroundWaveElapsedSec = 0;
+    var backgroundWaveLastTickAt = 0;
+    var backgroundScrollDistanceY = 0;
+    var backgroundScrollLastTickAt = 0;
+    var backgroundScrollSpeedPxPerSec = typeof gameConfig.backgroundScrollSpeedPxPerSec === 'number' ? gameConfig.backgroundScrollSpeedPxPerSec : 52;
+    var backgroundDimOpacity = 0;
+    var backgroundDimMaxOpacity = typeof gameConfig.backgroundDimMaxOpacity === 'number' ? gameConfig.backgroundDimMaxOpacity : 0.5;
+    var backgroundDimFadeDurationMs = typeof gameConfig.backgroundDimFadeDurationMs === 'number' ? gameConfig.backgroundDimFadeDurationMs : 420;
     var backgroundWaveAmplitudePx = typeof gameConfig.backgroundWaveAmplitudePx === 'number' ? gameConfig.backgroundWaveAmplitudePx : 6;
     var backgroundWaveFrequency = typeof gameConfig.backgroundWaveFrequency === 'number' ? gameConfig.backgroundWaveFrequency : 0.04;
     var backgroundWaveSpeed = typeof gameConfig.backgroundWaveSpeed === 'number' ? gameConfig.backgroundWaveSpeed : 3.2;
@@ -362,6 +375,15 @@ var game = (function () {
         return playerShotSound;
     }
 
+    function ensureBossDefeatFlashSound() {
+        if (!bossDefeatFlashSound) {
+            bossDefeatFlashSound = new Audio('sounds/Chiptuneexplosion.mp3');
+            bossDefeatFlashSound.preload = 'auto';
+            bossDefeatFlashSound.loop = false;
+        }
+        return bossDefeatFlashSound;
+    }
+
     function playSoundEffect(baseSound, volumeMultiplier) {
         if (!baseSound) {
             return;
@@ -386,6 +408,10 @@ var game = (function () {
 
     function playPlayerShotSound() {
         playSoundEffect(ensurePlayerShotSound());
+    }
+
+    function playBossDefeatFlashSound() {
+        playSoundEffect(ensureBossDefeatFlashSound());
     }
 
     function padFrameNumber(number) {
@@ -2144,10 +2170,11 @@ var game = (function () {
 
     function createBossByLevel(stageConfig) {
         var bossConfig = bossByLevel.final || { spriteIndex: 0, lifeBonus: 0, shotsBonus: 0, speedBonus: 0, pointsBonus: 0 };
+        var bossLife = Math.max(1, Math.round((stageConfig.bossLife + bossConfig.lifeBonus) * finalBossLifeMultiplier));
         var runtime = ensureEnemyEntityRuntime();
         var boss = runtime && typeof runtime.createFinalBoss === 'function'
             ? runtime.createFinalBoss(
-                stageConfig.bossLife + bossConfig.lifeBonus,
+                bossLife,
                 stageConfig.bossShots + bossConfig.shotsBonus,
                 stageConfig.bossSpeed + bossConfig.speedBonus,
                 bossConfig.spriteIndex,
@@ -2155,7 +2182,7 @@ var game = (function () {
                 bossImages
             )
             : new FinalBoss(
-                stageConfig.bossLife + bossConfig.lifeBonus,
+                bossLife,
                 stageConfig.bossShots + bossConfig.shotsBonus,
                 stageConfig.bossSpeed + bossConfig.speedBonus,
                 bossConfig.spriteIndex,
@@ -2215,6 +2242,7 @@ var game = (function () {
 
         bossDefeatEnemyRef = defeatedBoss;
         bossDefeatSpriteSwapApplied = false;
+        bossDefeatFlashSoundPlayed = false;
         bossDefeatCinematicStartAt = new Date().getTime();
         stageState = 'boss_defeat_cinematic';
         stageMessage = '';
@@ -2263,6 +2291,10 @@ var game = (function () {
         }
         if (didSwapToBossDeathThisFrame) {
             flashAlpha = 1;
+            if (!bossDefeatFlashSoundPlayed) {
+                playBossDefeatFlashSound();
+                bossDefeatFlashSoundPlayed = true;
+            }
         }
 
         if (flashAlpha > 0) {
@@ -2279,6 +2311,7 @@ var game = (function () {
             bossDefeatCinematicStartAt = 0;
             bossDefeatEnemyRef = null;
             bossDefeatSpriteSwapApplied = false;
+            bossDefeatFlashSoundPlayed = false;
             completeStageClear();
         }
     }
@@ -4052,6 +4085,15 @@ var game = (function () {
         if (destroyedCount >= combat.weapons.length) {
             enemy.life = 0;
             enemy.kill();
+            for (var enemyIndex = 0; enemyIndex < activeEnemies.length; enemyIndex++) {
+                var otherEnemy = activeEnemies[enemyIndex];
+                if (!otherEnemy || otherEnemy.dead || otherEnemy === enemy || otherEnemy.isBossLevelOne) {
+                    continue;
+                }
+                otherEnemy.life = 0;
+                otherEnemy.kill();
+                addScoreForEnemyKill(otherEnemy);
+            }
             for (var i = 0; i < bossBombs.length; i++) {
                 if (bossBombs[i]) {
                         bossBombs[i].dead = true;
@@ -4790,6 +4832,42 @@ var game = (function () {
 
         var width = canvas.width;
         var height = canvas.height;
+        var nowMs = new Date().getTime();
+        var isNormalStage = stageState !== 'menu' && currentStageType !== 'boss';
+        var isNormalStagePlaying = stageState === 'playing' && isNormalStage;
+        var shouldAdvanceBackgroundAnimation = stageState === 'playing' && !isPaused;
+        var shouldDimBackground = isPaused || stageState === 'reward_pending' || stageState === 'summary' || stageState === 'countdown' || stageState === 'name_input_pending';
+
+        if (!backgroundScrollLastTickAt) {
+            backgroundScrollLastTickAt = nowMs;
+        }
+
+        var deltaSeconds = Math.max(0, (nowMs - backgroundScrollLastTickAt) / 1000);
+        backgroundScrollLastTickAt = nowMs;
+
+        if (isNormalStagePlaying && !isPaused) {
+            backgroundScrollDistanceY -= backgroundScrollSpeedPxPerSec * deltaSeconds;
+        }
+
+        if (!backgroundWaveLastTickAt) {
+            backgroundWaveLastTickAt = nowMs;
+        }
+
+        var waveDeltaSeconds = Math.max(0, (nowMs - backgroundWaveLastTickAt) / 1000);
+        backgroundWaveLastTickAt = nowMs;
+
+        if (shouldAdvanceBackgroundAnimation) {
+            backgroundWaveElapsedSec += waveDeltaSeconds;
+        }
+
+        var dimTargetOpacity = shouldDimBackground ? backgroundDimMaxOpacity : 0;
+        var fadeDurationSec = Math.max(0.001, backgroundDimFadeDurationMs / 1000);
+        var dimStep = (deltaSeconds / fadeDurationSec) * backgroundDimMaxOpacity;
+        if (backgroundDimOpacity < dimTargetOpacity) {
+            backgroundDimOpacity = Math.min(dimTargetOpacity, backgroundDimOpacity + dimStep);
+        } else if (backgroundDimOpacity > dimTargetOpacity) {
+            backgroundDimOpacity = Math.max(dimTargetOpacity, backgroundDimOpacity - dimStep);
+        }
 
         if (!backgroundWaveCanvas) {
             backgroundWaveCanvas = document.createElement('canvas');
@@ -4804,9 +4882,34 @@ var game = (function () {
         }
 
         backgroundWaveContext.clearRect(0, 0, width, height);
-        backgroundWaveContext.drawImage(background, 0, 0, width, height);
 
-        var waveTime = new Date().getTime() / 1000;
+        if (isNormalStage) {
+            var tileHeight = height;
+            var wrappedOffsetY = ((backgroundScrollDistanceY % tileHeight) + tileHeight) % tileHeight;
+            var firstTileY = -wrappedOffsetY;
+            var baseTileIndex = Math.floor(backgroundScrollDistanceY / tileHeight);
+            var tilesToDraw = Math.ceil((height + wrappedOffsetY) / tileHeight) + 1;
+
+            for (var tile = 0; tile < tilesToDraw; tile++) {
+                var drawY = firstTileY + (tile * tileHeight);
+                var tileIndex = baseTileIndex + tile;
+                var drawFlipped = Math.abs(tileIndex % 2) === 1;
+
+                if (drawFlipped) {
+                    backgroundWaveContext.save();
+                    backgroundWaveContext.translate(0, drawY + tileHeight);
+                    backgroundWaveContext.scale(1, -1);
+                    backgroundWaveContext.drawImage(background, 0, 0, width, tileHeight);
+                    backgroundWaveContext.restore();
+                } else {
+                    backgroundWaveContext.drawImage(background, 0, drawY, width, tileHeight);
+                }
+            }
+        } else {
+            backgroundWaveContext.drawImage(background, 0, 0, width, height);
+        }
+
+        var waveTime = backgroundWaveElapsedSec;
         var stripeHeight = Math.max(1, Math.round(backgroundWaveStripeHeight));
         var amplitude = Math.max(0, backgroundWaveAmplitudePx);
 
@@ -4829,6 +4932,14 @@ var game = (function () {
                 bufferctx.drawImage(backgroundWaveCanvas, leftShift, y, leftWidth, sliceHeight, 0, y, leftWidth, sliceHeight);
                 bufferctx.drawImage(backgroundWaveCanvas, 0, y, leftShift, sliceHeight, leftWidth, y, leftShift, sliceHeight);
             }
+        }
+
+        if (backgroundDimOpacity > 0) {
+            bufferctx.save();
+            bufferctx.globalAlpha = Math.max(0, Math.min(backgroundDimMaxOpacity, backgroundDimOpacity));
+            bufferctx.fillStyle = '#000000';
+            bufferctx.fillRect(0, 0, width, height);
+            bufferctx.restore();
         }
     }
 
