@@ -4836,7 +4836,7 @@ var game = (function () {
         var isNormalStage = stageState !== 'menu' && currentStageType !== 'boss';
         var isNormalStagePlaying = stageState === 'playing' && isNormalStage;
         var shouldAdvanceBackgroundAnimation = stageState === 'playing' && !isPaused;
-        var shouldDimBackground = isPaused || stageState === 'reward_pending' || stageState === 'summary' || stageState === 'countdown' || stageState === 'name_input_pending';
+        var shouldDimBackground = isPaused || stageState === 'menu' || stageState === 'reward_pending' || stageState === 'summary' || stageState === 'countdown' || stageState === 'name_input_pending';
 
         if (!backgroundScrollLastTickAt) {
             backgroundScrollLastTickAt = nowMs;

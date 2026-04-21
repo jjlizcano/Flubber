@@ -35,37 +35,57 @@ a:hover {
 div.contenedor {
     width: 100%;
     margin: 0 auto;
+    padding: 20px 0;
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: minmax(300px, 1fr) minmax(320px, 600px) minmax(300px, 1fr);
+    gap: 24px;
+    justify-content: center;
+    align-items: start;
 }
 div.izquierda, div.derecha {
-    width: 300px;
+    width: auto;
 }
 div.izquierda {
-    float: left;
     text-align: left;
 }
+div.izquierda img {
+    display: block;
+    margin: 0 auto;
+}
 div.juego {
-
+    display: flex;
+    justify-content: center;
 }
 div.juego canvas {
     border: 3px solid var(--arcade-border);
     box-shadow: 0 0 18px rgba(255, 125, 0, 0.75), 0 0 38px rgba(255, 202, 77, 0.5), inset 0 0 18px rgba(255, 95, 0, 0.25);
     image-rendering: pixelated;
     image-rendering: crisp-edges;
+    max-width: 100%;
+    height: auto;
 }
 div.derecha {
-    float: right;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 div.derecha h3.tituloPuntuaciones {
-    background: url("../images/medalla.png") no-repeat left;
+    background: url("../images/medalla.png") no-repeat left center;
+    width: 300px;
+    margin: 0 auto 12px;
     padding: 10px;
+    text-align: center;
     color: var(--arcade-primary);
     text-shadow: 1px 1px 0 #000;
 }
 div.derecha ul#puntuaciones {
     width: 300px;
-    margin: 0;
+    margin: 0 auto;
     padding: 0;
     list-style: none;
+    text-align: center;
 }
 
 div.derecha ul#puntuaciones li{
@@ -75,12 +95,14 @@ div.derecha ul#puntuaciones li{
     display:inline;
     width: 50%;
     padding: 10px 0;
+    text-align: center;
 }
 .negrita {
     font-weight: bold;
 }
 ul.lista {
-    margin: 25px 0;
+    width: 300px;
+    margin: 25px auto;
     padding: 0;
     list-style: none;
     text-align: left;
@@ -109,4 +131,17 @@ ul.lista li.safari {
 ul.lista li.titulo {
     font-weight: bold;
     color: var(--arcade-secondary);
+}
+
+@media (max-width: 1240px) {
+    div.contenedor {
+        grid-template-columns: 1fr;
+        justify-items: center;
+    }
+
+    div.izquierda,
+    div.derecha,
+    div.juego {
+        width: min(100%, 600px);
+    }
 }
